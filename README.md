@@ -12,8 +12,11 @@ Próximamente: listas de reproducción y ecualizador paramétrico.
 
 ## Descargar
 
-Cada push compila un APK de prueba: en GitHub ve a **Actions**, abre la última
-ejecución y descarga el artefacto `BismoPower-debug-…`.
+Desde el celular, abre la última versión en
+[Releases](https://github.com/juanjoserodriguezmora4-spec/reproductor-musica/releases/latest)
+y toca el archivo `.apk`. Cada push a `main` publica una nueva.
+
+Los pushes a otras ramas solo dejan el APK como artefacto en **Actions**.
 
 ## Compilar
 

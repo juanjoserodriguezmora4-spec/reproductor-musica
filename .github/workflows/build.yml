@@ -5,6 +5,10 @@ on:
     branches: [ '**' ]
   workflow_dispatch:
 
+# Necesario para crear la versión en Releases.
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -39,3 +43,17 @@ jobs:
           name: BismoPower-debug-${{ github.run_number }}
           path: salida/*.apk
           retention-days: 30
+
+      - name: Publicar en Releases (solo main, para descargar desde el celular)
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: BismoPower 0.1 (compilación ${{ github.run_number }})
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          body: |
+            APK de prueba compilado desde `${{ github.sha }}`.
+            Desde el celular: toca el archivo **.apk** de abajo para descargarlo e instalarlo
+            (Android te pedirá permitir instalar apps desde el navegador la primera vez).
+          files: salida/*.apk

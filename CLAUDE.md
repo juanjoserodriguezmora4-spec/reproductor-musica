@@ -97,6 +97,8 @@ Reglas:
 
 El APK queda en `app/build/outputs/apk/debug/`. GitHub Actions compila un APK debug en
 cada push a cualquier rama y lo sube como artifact (`.github/workflows/build.yml`).
+En los pushes a `main` además lo publica en GitHub Releases (etiqueta `build-<número>`)
+para descargarlo desde el celular.
 
 En este equipo (Windows, JDK 25) Java no puede crear sus sockets locales en la carpeta
 temporal por defecto; si Gradle falla con "Unable to establish loopback connection":
