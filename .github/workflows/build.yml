@@ -1,0 +1,41 @@
+name: Compilar APK de prueba
+
+on:
+  push:
+    branches: [ '**' ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v4
+
+      - name: Instalar Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Preparar Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Compilar APK debug
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --stacktrace
+
+      - name: Renombrar el APK
+        run: |
+          mkdir -p salida
+          rama="${GITHUB_REF_NAME//\//-}"
+          cp app/build/outputs/apk/debug/app-debug.apk "salida/BismoPower-${rama}-${GITHUB_RUN_NUMBER}-debug.apk"
+          ls -la salida
+
+      - name: Guardar el APK como artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: BismoPower-debug-${{ github.run_number }}
+          path: salida/*.apk
+          retention-days: 30
