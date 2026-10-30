@@ -12,8 +12,8 @@ android {
         applicationId = "com.bismopower.app"
         minSdk = 26
         targetSdk = 37
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = System.getenv("BISMO_VERSION_CODE")?.toIntOrNull() ?: 1
+        versionName = System.getenv("BISMO_VERSION_NAME") ?: "0.3.0"
     }
 
     // Firma: GitHub Actions deja el keystore en BISMO_KEYSTORE_PATH a partir de los secretos del
