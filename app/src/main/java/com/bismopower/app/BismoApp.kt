@@ -4,17 +4,22 @@ import android.app.Application
 import android.content.Context
 import androidx.annotation.OptIn
 import androidx.media3.common.util.UnstableApi
+import coil.ImageLoader
+import coil.ImageLoaderFactory
 import com.bismopower.app.audio.AudioEffects
 import com.bismopower.app.data.EqRepository
 import com.bismopower.app.data.SettingsRepository
 import com.bismopower.app.data.db.BismoDatabase
 import com.bismopower.app.library.LibraryRepository
+import com.bismopower.app.library.TrackArtFetcher
 import com.bismopower.app.player.PlayerConnection
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 
-class BismoApp : Application() {
+class BismoApp :
+    Application(),
+    ImageLoaderFactory {
     lateinit var container: AppContainer
         private set
 
@@ -22,6 +27,14 @@ class BismoApp : Application() {
         super.onCreate()
         container = AppContainer(this)
     }
+
+    /** Cargador de imágenes de toda la app: sabe leer la carátula de cada canción (bismoart://). */
+    override fun newImageLoader(): ImageLoader =
+        ImageLoader
+            .Builder(this)
+            .components { add(TrackArtFetcher.Factory()) }
+            .crossfade(180)
+            .build()
 }
 
 /** Contenedor sencillo de dependencias (en lugar de Hilt, igual que en Bruma). */

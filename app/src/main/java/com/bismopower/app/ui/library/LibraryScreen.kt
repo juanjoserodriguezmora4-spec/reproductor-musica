@@ -50,7 +50,7 @@ import com.bismopower.app.data.db.AlbumRow
 import com.bismopower.app.data.db.ArtistRow
 import com.bismopower.app.data.db.FolderRow
 import com.bismopower.app.data.db.TrackEntity
-import com.bismopower.app.library.albumArtUri
+import com.bismopower.app.library.trackArtUri
 import com.bismopower.app.ui.common.BI
 import com.bismopower.app.ui.common.Corners
 import com.bismopower.app.ui.common.EmptyState
@@ -272,7 +272,7 @@ private fun LazyListScope.trackItems(
                         Text(if (t.trackNumber > 0) "${t.trackNumber}" else "·", style = T.small, color = c.muted)
                     }
                 } else {
-                    Thumb(albumArtUri(t.albumId), t.album, Modifier.size(44.dp), corner = 10.dp, icon = BI.Music)
+                    Thumb(trackArtUri(t.id, t.albumId), t.album, Modifier.size(44.dp), corner = 10.dp, icon = BI.Music)
                 }
             },
             onClick = { app.player.play(tracks, i) },
@@ -319,7 +319,7 @@ private fun AlbumCard(
             .padding(8.dp),
     ) {
         Thumb(
-            albumArtUri(a.albumId),
+            trackArtUri(a.firstTrackId, a.albumId),
             a.album,
             Modifier
                 .fillMaxWidth()
@@ -368,7 +368,7 @@ private fun ArtistRowItem(
     ListRow(
         title = a.artist,
         subtitle = "${plural(a.albums, "álbum", "álbumes")} · ${plural(a.count, "canción", "canciones")}",
-        leading = { Thumb(albumArtUri(a.albumId), a.artist, Modifier.size(44.dp), corner = 22.dp, icon = BI.User) },
+        leading = { Thumb(trackArtUri(a.firstTrackId, a.albumId), a.artist, Modifier.size(44.dp), corner = 22.dp, icon = BI.User) },
         trailing = { androidx.compose.material3.Icon(BI.Chevron, null, tint = LocalBismo.current.muted, modifier = Modifier.size(16.dp)) },
         onClick = onClick,
         modifier =
@@ -447,7 +447,7 @@ private fun DetailScreen(
                 IconChip(BI.Back, onBack, description = "Volver")
                 Spacer(Modifier.height(16.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    val art = (d as? Detail.Album)?.let { albumArtUri(it.id) } ?: tracks.firstOrNull()?.let { albumArtUri(it.albumId) }
+                    val art = tracks.firstOrNull()?.let { trackArtUri(it.id, it.albumId) }
                     val icon =
                         when (d) {
                             is Detail.Album -> BI.Disc

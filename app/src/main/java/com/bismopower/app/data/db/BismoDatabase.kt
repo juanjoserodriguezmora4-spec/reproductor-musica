@@ -35,6 +35,8 @@ data class TrackEntity(
 
 data class AlbumRow(
     val albumId: Long,
+    /** Una canción del álbum, para mostrar su carátula. */
+    val firstTrackId: Long,
     val album: String,
     val artist: String,
     val count: Int,
@@ -43,6 +45,7 @@ data class AlbumRow(
 
 data class ArtistRow(
     val artist: String,
+    val firstTrackId: Long,
     val albums: Int,
     val count: Int,
     val albumId: Long,
@@ -50,6 +53,7 @@ data class ArtistRow(
 
 data class FolderRow(
     val folder: String,
+    val firstTrackId: Long,
     val count: Int,
     val albumId: Long,
 )
@@ -60,19 +64,19 @@ interface TrackDao {
     fun all(): Flow<List<TrackEntity>>
 
     @Query(
-        "SELECT albumId, album, MAX(artist) AS artist, COUNT(*) AS count, MAX(year) AS year " +
+        "SELECT albumId, MIN(id) AS firstTrackId, album, MAX(artist) AS artist, COUNT(*) AS count, MAX(year) AS year " +
             "FROM tracks GROUP BY albumId ORDER BY album COLLATE NOCASE",
     )
     fun albums(): Flow<List<AlbumRow>>
 
     @Query(
-        "SELECT artist, COUNT(DISTINCT albumId) AS albums, COUNT(*) AS count, MIN(albumId) AS albumId " +
+        "SELECT artist, MIN(id) AS firstTrackId, COUNT(DISTINCT albumId) AS albums, COUNT(*) AS count, MIN(albumId) AS albumId " +
             "FROM tracks GROUP BY artist ORDER BY artist COLLATE NOCASE",
     )
     fun artists(): Flow<List<ArtistRow>>
 
     @Query(
-        "SELECT folder, COUNT(*) AS count, MIN(albumId) AS albumId " +
+        "SELECT folder, MIN(id) AS firstTrackId, COUNT(*) AS count, MIN(albumId) AS albumId " +
             "FROM tracks GROUP BY folder ORDER BY folder COLLATE NOCASE",
     )
     fun folders(): Flow<List<FolderRow>>

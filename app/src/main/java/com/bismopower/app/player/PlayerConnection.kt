@@ -11,7 +11,7 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.bismopower.app.data.db.TrackEntity
-import com.bismopower.app.library.albumArtUri
+import com.bismopower.app.library.trackArtUri
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -54,7 +54,7 @@ fun TrackEntity.toMediaItem(): MediaItem {
             .setTitle(title)
             .setArtist(artist)
             .setAlbumTitle(album)
-            .setArtworkUri(albumArtUri(albumId))
+            .setArtworkUri(trackArtUri(id, albumId))
             .setTrackNumber(trackNumber)
             .setExtras(Bundle().apply { putLong(EXTRA_ALBUM_ID, albumId) })
             .build()

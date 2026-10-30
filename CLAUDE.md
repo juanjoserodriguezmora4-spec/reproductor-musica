@@ -105,6 +105,12 @@ Reglas:
   las tarjetas de las listas solo tienen detrás las manchas del fondo, que ya están
   difuminadas, así que usan el tinte translúcido y la app va fluida en celulares viejos.
 - Sin carátula: degradado de Bruma según el nombre del álbum (`gradientFor`).
+- Carátulas: siempre por canción con `trackArtUri(trackId, albumId)` (esquema `bismoart://`),
+  nunca con `albumArtUri` directo. `ArtLoader` prueba: miniatura de Android (10+) → imagen
+  incrustada en el archivo → carátula del álbum. Coil lo lee con `TrackArtFetcher` (registrado
+  en `BismoApp.newImageLoader`) y Media3 con `TrackArtBitmapLoader` (en `PlaybackService`).
+  Motivo: las descargas de Bruma no traen álbum y Android las junta en un solo "álbum" con
+  el nombre de la carpeta, así que la carátula del álbum sale vacía o repetida.
 - Tema claro/oscuro según el sistema, con opción en Ajustes.
 - Tipografía Inter (la misma de Bruma) y estilos de texto en el objeto `T`.
 - Animaciones cortas (150–320 ms) con `tween`/`animateColorAsState`; nada de efectos

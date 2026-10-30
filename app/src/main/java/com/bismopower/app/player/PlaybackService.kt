@@ -8,12 +8,14 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.CacheBitmapLoader
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.bismopower.app.R
 import com.bismopower.app.audio.BismoRenderersFactory
 import com.bismopower.app.container
+import com.bismopower.app.library.TrackArtBitmapLoader
 import com.bismopower.app.ui.MainActivity
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
@@ -24,6 +26,7 @@ const val EXTRA_ROUTE = "route"
 @OptIn(UnstableApi::class)
 class PlaybackService : MediaSessionService() {
     private var session: MediaSession? = null
+    private var artLoader: TrackArtBitmapLoader? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -60,10 +63,15 @@ class PlaybackService : MediaSessionService() {
                 .apply { setSmallIcon(R.drawable.ic_stat_bismo) },
         )
 
+        // Carga la carátula de cada canción (también las de Bruma) para la notificación y la pantalla de bloqueo.
+        val loader = TrackArtBitmapLoader(this)
+        artLoader = loader
+
         session =
             MediaSession
                 .Builder(this, player)
                 .setSessionActivity(pending)
+                .setBitmapLoader(CacheBitmapLoader(loader))
                 .setCallback(
                     object : MediaSession.Callback {
                         // Los elementos que llegan desde la interfaz traen la ruta del archivo en requestMetadata.
@@ -97,6 +105,8 @@ class PlaybackService : MediaSessionService() {
             release()
         }
         session = null
+        artLoader?.release()
+        artLoader = null
         super.onDestroy()
     }
 }
