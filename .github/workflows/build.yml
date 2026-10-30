@@ -14,6 +14,10 @@ jobs:
     runs-on: ubuntu-latest
     env:
       KEYSTORE_B64: ${{ secrets.BISMO_KEYSTORE_BASE64 }}
+      # Versión de la app: VERSION_BASE.<número>. Para pasar a 0.4.x cambia VERSION_BASE
+      # a "0.4" y PARCHE_DESDE al número de la última compilación, así vuelve a empezar en .1
+      VERSION_BASE: "0.3"
+      PARCHE_DESDE: 7
     steps:
       - name: Descargar el código
         uses: actions/checkout@v4
@@ -26,6 +30,15 @@ jobs:
 
       - name: Preparar Gradle
         uses: gradle/actions/setup-gradle@v4
+
+      - name: Calcular la versión
+        run: |
+          parche=$(( GITHUB_RUN_NUMBER - PARCHE_DESDE ))
+          if [ "$parche" -lt 1 ]; then parche=1; fi
+          version="${VERSION_BASE}.${parche}"
+          echo "BISMO_VERSION_NAME=$version" >> "$GITHUB_ENV"
+          echo "BISMO_VERSION_CODE=$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+          echo "Versión: $version (código $GITHUB_RUN_NUMBER)"
 
       # El keystore vive en los secretos del repositorio (en texto base64), nunca en el código.
       - name: Preparar la firma (solo si configuraste los secretos)
@@ -50,13 +63,13 @@ jobs:
       - name: Renombrar el APK
         run: |
           mkdir -p salida
-          cp app/build/outputs/apk/release/app-release.apk "salida/BismoPower.apk"
+          cp app/build/outputs/apk/release/app-release.apk "salida/BismoPower-${BISMO_VERSION_NAME}.apk"
           ls -la salida
 
       - name: Guardar el APK como artefacto
         uses: actions/upload-artifact@v4
         with:
-          name: BismoPower-${{ github.run_number }}
+          name: BismoPower-${{ env.BISMO_VERSION_NAME }}
           path: salida/*.apk
           retention-days: 30
 
@@ -64,8 +77,8 @@ jobs:
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: build-${{ github.run_number }}
-          name: BismoPower (compilación ${{ github.run_number }})
+          tag_name: v${{ env.BISMO_VERSION_NAME }}
+          name: BismoPower ${{ env.BISMO_VERSION_NAME }}
           target_commitish: ${{ github.sha }}
           make_latest: true
           body: |
