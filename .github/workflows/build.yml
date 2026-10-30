@@ -50,8 +50,7 @@ jobs:
       - name: Renombrar el APK
         run: |
           mkdir -p salida
-          rama="${GITHUB_REF_NAME//\//-}"
-          cp app/build/outputs/apk/release/app-release.apk "salida/BismoPower-${rama}-${GITHUB_RUN_NUMBER}.apk"
+          cp app/build/outputs/apk/release/app-release.apk "salida/BismoPower.apk"
           ls -la salida
 
       - name: Guardar el APK como artefacto
