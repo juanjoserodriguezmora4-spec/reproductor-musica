@@ -9,8 +9,10 @@ Reproductor de música local para Android con el diseño de vidrio esmerilado de
 - Colores que se adaptan a cada álbum
 - Música en segundo plano con controles en la notificación y la pantalla de bloqueo
 - Tema claro y oscuro
+- Ecualizador paramétrico de 10 bandas: curva que se arrastra con el dedo, presets,
+  preamplificador, graves, agudos y limitador
 
-Próximamente: listas de reproducción y ecualizador paramétrico.
+Próximamente: listas de reproducción, favoritas y temporizador.
 
 ## Descargar
 

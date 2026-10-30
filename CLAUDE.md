@@ -24,7 +24,11 @@ Textos de la interfaz, comentarios y mensajes de commit en español.
 ```
 app/src/main/java/com/bismopower/app/
   BismoApp.kt              AppContainer (db, ajustes, biblioteca, reproductor, efectos)
-  audio/AudioEffects.kt    Cadena de AudioProcessor + RenderersFactory (gancho de la Fase 2)
+  audio/AudioEffects.kt    Cadena de AudioProcessor + RenderersFactory + ParametricEq (motor)
+  audio/Biquad.kt          Fórmulas de los filtros (Audio EQ Cookbook) y respuesta en dB
+  audio/EqSettings.kt      Ajustes del ecualizador (inmutables), presets, guardar/leer como texto
+  data/EqRepository.kt     Estado del ecualizador: lo guarda (DataStore "equalizer") y lo aplica
+  ui/equalizer/            Pantalla del ecualizador (curva, barras, editor de banda, tono)
   data/Settings.kt         DataStore: tema, reducir transparencia
   data/db/BismoDatabase.kt Room: TrackEntity, consultas de álbumes/artistas/carpetas
   library/                 Escaneo de MediaStore → Room, permiso de audio, URI de carátulas
@@ -111,15 +115,20 @@ Reglas:
 - Reproducción en segundo plano con controles en notificación y pantalla de bloqueo
 - Listas y Ecualizador como pantallas "Próximamente"
 
-**Fase 2 (siguiente)**
-- Ecualizador paramétrico con filtros biquad: implementar `ParametricEq` en
-  `audio/AudioEffects.kt` (ya está conectado al `DefaultAudioSink` de ExoPlayer vía
-  `BismoRenderersFactory`; hoy devuelve `AudioFormat.NOT_SET` y queda inactivo).
-  Aceptar PCM 16 bits y float, un biquad por banda y canal, recalcular coeficientes en
-  `onFlush`. La pantalla del ecualizador cambia las bandas a través de
-  `container.audioEffects.equalizer`.
-- Listas de reproducción (Room), favoritas, más escuchadas
-- Cola: reordenar arrastrando (ya se puede ver, saltar y quitar), temporizador de apagado, búsqueda
+**Fase 2**
+- 2a (hecha) Ecualizador paramétrico propio en `ParametricEq`:
+  - 10 bandas (31 Hz–16 kHz) con frecuencia, ganancia (±15 dB), Q y forma (campana,
+    estante de graves, estante de agudos) + perillas de graves (100 Hz) y agudos (10 kHz)
+  - Preamplificador y limitador suave (tanh desde el 90 %) para que no sature
+  - Acepta PCM 16 bits y float; calcula en Double con forma directa II transpuesta
+  - Los ajustes llegan desde la UI con `update()` (objeto inmutable + @Volatile); el hilo
+    de audio recalcula coeficientes cuando cambia la versión, la frecuencia o los canales
+  - Presets de fábrica; cualquier cambio a mano pasa a "Personalizado"
+  - Pantalla: curva de respuesta con puntos arrastrables (frecuencia + ganancia), barras
+    verticales (doble toque = 0), editor de banda, tono y limitador
+- 2b (siguiente) Listas de reproducción (Room), favoritas, más escuchadas
+- 2c Cola: reordenar arrastrando; temporizador de apagado; búsqueda
+- Pendiente del ecualizador: presets propios con nombre, onda real en el reproductor
 
 ## Compilar
 

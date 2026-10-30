@@ -5,6 +5,7 @@ import android.content.Context
 import androidx.annotation.OptIn
 import androidx.media3.common.util.UnstableApi
 import com.bismopower.app.audio.AudioEffects
+import com.bismopower.app.data.EqRepository
 import com.bismopower.app.data.SettingsRepository
 import com.bismopower.app.data.db.BismoDatabase
 import com.bismopower.app.library.LibraryRepository
@@ -34,8 +35,11 @@ class AppContainer(
     val library = LibraryRepository(app, db)
     val player = PlayerConnection(app)
 
-    /** Cadena de efectos de audio que usa ExoPlayer. En la Fase 2 aquí vive el ecualizador. */
+    /** Cadena de efectos de audio que usa ExoPlayer (el ecualizador vive aquí). */
     val audioEffects = AudioEffects()
+
+    /** Ajustes del ecualizador: los guarda y se los pasa al motor de audio. */
+    val equalizer = EqRepository(app, appScope) { audioEffects.equalizer.update(it) }
 }
 
 val Context.container: AppContainer

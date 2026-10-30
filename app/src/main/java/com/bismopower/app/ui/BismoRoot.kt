@@ -37,6 +37,7 @@ import com.bismopower.app.ui.common.BottomNav
 import com.bismopower.app.ui.common.GlassBackground
 import com.bismopower.app.ui.common.LocalHaze
 import com.bismopower.app.ui.common.MiniPlayerBar
+import com.bismopower.app.ui.equalizer.EqualizerScreen
 import com.bismopower.app.ui.library.LibraryScreen
 import com.bismopower.app.ui.player.PlayerScreen
 import com.bismopower.app.ui.settings.SettingsScreen
@@ -80,12 +81,7 @@ fun BismoRoot(
                                     icon = BI.ListMusic,
                                     text = "Pronto podrás crear listas, ver tus favoritas y lo que más escuchas.",
                                 )
-                            2 ->
-                                ComingSoonScreen(
-                                    title = "Ecualizador",
-                                    icon = BI.Sliders,
-                                    text = "Un ecualizador paramétrico con filtros precisos para cada banda llega en la próxima versión.",
-                                )
+                            2 -> EqualizerScreen()
                             else -> SettingsScreen()
                         }
                     }
