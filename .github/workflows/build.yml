@@ -1,4 +1,4 @@
-name: Compilar APK de prueba
+name: Compilar APK firmado
 
 on:
   push:
@@ -12,6 +12,8 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      KEYSTORE_B64: ${{ secrets.BISMO_KEYSTORE_BASE64 }}
     steps:
       - name: Descargar el código
         uses: actions/checkout@v4
@@ -25,22 +27,37 @@ jobs:
       - name: Preparar Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Compilar APK debug
+      # El keystore vive en los secretos del repositorio (en texto base64), nunca en el código.
+      - name: Preparar la firma (solo si configuraste los secretos)
+        if: env.KEYSTORE_B64 != ''
+        run: |
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/bismopower.jks"
+          echo "BISMO_KEYSTORE_PATH=$RUNNER_TEMP/bismopower.jks" >> "$GITHUB_ENV"
+
+      - name: Avisar si falta la firma
+        if: env.KEYSTORE_B64 == ''
+        run: echo "::warning::No están los secretos BISMO_*; el APK queda firmado con la clave de depuración."
+
+      - name: Compilar APK release
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --stacktrace
+          ./gradlew assembleRelease --stacktrace
+        env:
+          BISMO_KEYSTORE_PASSWORD: ${{ secrets.BISMO_KEYSTORE_PASSWORD }}
+          BISMO_KEY_ALIAS: ${{ secrets.BISMO_KEY_ALIAS }}
+          BISMO_KEY_PASSWORD: ${{ secrets.BISMO_KEY_PASSWORD }}
 
       - name: Renombrar el APK
         run: |
           mkdir -p salida
           rama="${GITHUB_REF_NAME//\//-}"
-          cp app/build/outputs/apk/debug/app-debug.apk "salida/BismoPower-${rama}-${GITHUB_RUN_NUMBER}-debug.apk"
+          cp app/build/outputs/apk/release/app-release.apk "salida/BismoPower-${rama}-${GITHUB_RUN_NUMBER}.apk"
           ls -la salida
 
       - name: Guardar el APK como artefacto
         uses: actions/upload-artifact@v4
         with:
-          name: BismoPower-debug-${{ github.run_number }}
+          name: BismoPower-${{ github.run_number }}
           path: salida/*.apk
           retention-days: 30
 
@@ -49,11 +66,10 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
-          name: BismoPower 0.1 (compilación ${{ github.run_number }})
+          name: BismoPower (compilación ${{ github.run_number }})
           target_commitish: ${{ github.sha }}
           make_latest: true
           body: |
-            APK de prueba compilado desde `${{ github.sha }}`.
-            Desde el celular: toca el archivo **.apk** de abajo para descargarlo e instalarlo
-            (Android te pedirá permitir instalar apps desde el navegador la primera vez).
+            APK firmado, compilado desde `${{ github.sha }}`.
+            Desde el celular: toca el archivo **.apk** de abajo para descargarlo e instalarlo.
           files: salida/*.apk
