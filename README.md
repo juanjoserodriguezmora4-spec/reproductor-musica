@@ -4,7 +4,9 @@ Reproductor de música local para Android con el diseño de vidrio esmerilado de
 [Bruma](https://github.com/juanjoserodriguezmora4-spec/Bruma).
 
 - Biblioteca: canciones, álbumes, artistas y carpetas
-- Reproductor con carátula grande y colores que se adaptan a cada álbum
+- Reproductor con gestos: desliza la carátula para cambiar de canción, mantén los botones
+  para adelantar, toca la onda para saltar, desliza hacia arriba para ver la cola
+- Colores que se adaptan a cada álbum
 - Música en segundo plano con controles en la notificación y la pantalla de bloqueo
 - Tema claro y oscuro
 

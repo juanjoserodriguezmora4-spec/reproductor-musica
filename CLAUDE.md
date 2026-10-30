@@ -35,8 +35,38 @@ app/src/main/java/com/bismopower/app/
   ui/common/Bars.kt        Barra inferior flotante y mini reproductor
   ui/common/Icons.kt       Íconos de línea (los mismos de Bruma + extras de música)
   ui/BismoRoot.kt          Pestañas, capa de Haze, hoja del reproductor
-  ui/library, ui/player, ui/settings, ui/soon
+  ui/player/PlayerScreen   Reproductor a pantalla completa con gestos (ver abajo)
+  ui/player/WaveSeekBar    Barra de progreso en forma de onda
+  ui/player/QueueSheet     Cola que sube encima del reproductor
+  ui/player/PlayerColors   Acento y brillos sacados de la carátula (Palette)
+  ui/library, ui/settings, ui/soon
 ```
+
+## Reproductor: gestos y animaciones (estilo Poweramp, identidad propia)
+
+El reproductor imita la forma de usar Poweramp (gestos, animaciones, distribución), no su
+aspecto: no se copian su logo, nombre, skins ni íconos. Siempre es oscuro, aunque la app
+esté en modo claro, con la carátula desenfocada de fondo (Android 12+) y el acento de la
+canción en los controles.
+
+| Dónde | Gesto | Acción |
+|---|---|---|
+| Carátula | Deslizar izquierda / derecha | Siguiente / anterior (la carátula sigue al dedo, sale volando y la nueva entra con rebote) |
+| Carátula | Deslizar arriba | Abrir la cola |
+| Carátula o pantalla | Deslizar abajo | Cerrar el reproductor |
+| Carátula | Un toque | Pausa / reproducir (ícono grande que aparece y se desvanece) |
+| Carátula | Doble toque izquierda / derecha | −10 s / +10 s |
+| Anterior / siguiente | Mantener | Retroceder / adelantar 5 s cada 180 ms |
+| Onda | Tocar o arrastrar | Saltar a ese punto (burbuja con el tiempo) |
+| Mini reproductor | Deslizar izquierda / derecha | Siguiente / anterior |
+| Mini reproductor | Tocar o deslizar arriba | Abrir el reproductor |
+
+- La onda todavía es decorativa (se genera con el id de la canción). La onda real, leída
+  del audio, queda para una fase posterior.
+- Pausado, la carátula se encoge al 88 %; los botones se hunden al tocarlos y rebotan.
+- Los gestos de carátula usan `nextTrack()`/`previousTrack()` de `PlayerConnection`
+  (cambian de canción siempre); el botón "anterior" usa `previous()`, que primero
+  reinicia la canción si lleva más de unos segundos.
 
 ## Sistema de diseño (vidrio esmerilado en tres capas)
 
@@ -74,8 +104,10 @@ Reglas:
 **Fase 1 (hecha)**
 - Permiso de audio (+ notificaciones en Android 13+) y escaneo con MediaStore
 - Biblioteca con pestañas Canciones, Álbumes, Artistas, Carpetas y vistas de detalle
-- Reproductor completo (hoja que sube): carátula, título, artista, progreso,
+- Reproductor completo: carátula, título, artista, progreso,
   play/pausa, siguiente/anterior, aleatorio, repetir; colores de fondo con Palette
+- (0.2.0) Reproductor rehecho con gestos y animaciones estilo Poweramp, cola visible
+  (saltar y quitar canciones) y APK firmado
 - Reproducción en segundo plano con controles en notificación y pantalla de bloqueo
 - Listas y Ecualizador como pantallas "Próximamente"
 
@@ -87,7 +119,7 @@ Reglas:
   `onFlush`. La pantalla del ecualizador cambia las bandas a través de
   `container.audioEffects.equalizer`.
 - Listas de reproducción (Room), favoritas, más escuchadas
-- Cola visible y editable, temporizador de apagado, búsqueda
+- Cola: reordenar arrastrando (ya se puede ver, saltar y quitar), temporizador de apagado, búsqueda
 
 ## Compilar
 
@@ -95,10 +127,15 @@ Reglas:
 ./gradlew assembleDebug
 ```
 
-El APK queda en `app/build/outputs/apk/debug/`. GitHub Actions compila un APK debug en
-cada push a cualquier rama y lo sube como artifact (`.github/workflows/build.yml`).
+El APK queda en `app/build/outputs/apk/debug/`. GitHub Actions compila un APK **release
+firmado** en cada push a cualquier rama y lo sube como artifact (`.github/workflows/build.yml`).
 En los pushes a `main` además lo publica en GitHub Releases (etiqueta `build-<número>`)
 para descargarlo desde el celular.
+
+Firma: el keystore (`bismopower.jks`, alias `bismopower`) NO está en el repositorio. Vive en
+cuatro secretos de GitHub: `BISMO_KEYSTORE_BASE64`, `BISMO_KEYSTORE_PASSWORD`,
+`BISMO_KEY_ALIAS`, `BISMO_KEY_PASSWORD`. Sin ellos el workflow avisa y firma con la clave de
+depuración. Nunca cambiar de clave: Android no deja actualizar una app firmada con otra.
 
 En este equipo (Windows, JDK 25) Java no puede crear sus sockets locales en la carpeta
 temporal por defecto; si Gradle falla con "Unable to establish loopback connection":

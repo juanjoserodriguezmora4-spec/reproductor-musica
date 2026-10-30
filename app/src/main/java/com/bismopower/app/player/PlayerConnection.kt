@@ -30,6 +30,18 @@ data class PlayerUiState(
     val repeat: Int = Player.REPEAT_MODE_OFF,
     val index: Int = 0,
     val count: Int = 0,
+    val hasNext: Boolean = false,
+    val hasPrevious: Boolean = false,
+)
+
+/** Una canción de la cola, tal como la muestra la pantalla de la cola. */
+data class QueueItem(
+    val index: Int,
+    val id: Long?,
+    val title: String,
+    val artist: String,
+    val album: String,
+    val artwork: String?,
 )
 
 private const val EXTRA_ALBUM_ID = "albumId"
@@ -69,6 +81,10 @@ class PlayerConnection(
     private val pending = mutableListOf<(MediaController) -> Unit>()
     private val _state = MutableStateFlow(PlayerUiState())
     val state: StateFlow<PlayerUiState> = _state.asStateFlow()
+    private val _queue = MutableStateFlow<List<QueueItem>>(emptyList())
+
+    /** La cola completa; solo se reconstruye cuando cambia la lista de canciones. */
+    val queue: StateFlow<List<QueueItem>> = _queue.asStateFlow()
 
     private val listener =
         object : Player.Listener {
@@ -77,6 +93,7 @@ class PlayerConnection(
                 events: Player.Events,
             ) {
                 refresh()
+                if (events.contains(Player.EVENT_TIMELINE_CHANGED)) refreshQueue()
             }
         }
 
@@ -94,6 +111,7 @@ class PlayerConnection(
             controller = c
             c.addListener(listener)
             refresh()
+            refreshQueue()
             val actions = pending.toList()
             pending.clear()
             actions.forEach { it(c) }
@@ -127,8 +145,27 @@ class PlayerConnection(
                 repeat = c.repeatMode,
                 index = c.currentMediaItemIndex,
                 count = c.mediaItemCount,
+                hasNext = c.hasNextMediaItem(),
+                hasPrevious = c.hasPreviousMediaItem(),
             )
         }
+    }
+
+    private fun refreshQueue() {
+        val c = controller ?: return
+        _queue.value =
+            List(c.mediaItemCount) { i ->
+                val item = c.getMediaItemAt(i)
+                val meta = item.mediaMetadata
+                QueueItem(
+                    index = i,
+                    id = item.mediaId.toLongOrNull(),
+                    title = meta.title?.toString() ?: "",
+                    artist = meta.artist?.toString() ?: "",
+                    album = meta.albumTitle?.toString() ?: "",
+                    artwork = meta.artworkUri?.toString(),
+                )
+            }
     }
 
     fun position(): Long = controller?.currentPosition ?: 0L
@@ -156,6 +193,32 @@ class PlayerConnection(
     fun previous() = withController { it.seekToPrevious() }
 
     fun seek(ms: Long) = withController { it.seekTo(ms) }
+
+    /** Siguiente canción sin reiniciar la actual (lo usan los gestos sobre la carátula). */
+    fun nextTrack() = withController { if (it.hasNextMediaItem()) it.seekToNextMediaItem() }
+
+    /** Canción anterior siempre, aunque la actual ya lleve varios segundos sonando. */
+    fun previousTrack() = withController { if (it.hasPreviousMediaItem()) it.seekToPreviousMediaItem() }
+
+    /** Adelanta (positivo) o retrocede (negativo) [deltaMs] dentro de la canción. */
+    fun seekBy(deltaMs: Long) =
+        withController {
+            val dur = it.duration
+            val target = (it.currentPosition + deltaMs).coerceAtLeast(0L)
+            it.seekTo(if (dur > 0) target.coerceAtMost(dur - 500).coerceAtLeast(0L) else target)
+        }
+
+    /** Salta a la canción [index] de la cola. */
+    fun playAt(index: Int) =
+        withController {
+            if (index in 0 until it.mediaItemCount) {
+                it.seekTo(index, 0L)
+                it.play()
+            }
+        }
+
+    /** Quita de la cola la canción [index]. */
+    fun removeAt(index: Int) = withController { if (index in 0 until it.mediaItemCount) it.removeMediaItem(index) }
 
     fun setShuffle(on: Boolean) = withController { it.shuffleModeEnabled = on }
 

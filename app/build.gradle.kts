@@ -12,14 +12,30 @@ android {
         applicationId = "com.bismopower.app"
         minSdk = 26
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
+    }
+
+    // Firma: GitHub Actions deja el keystore en BISMO_KEYSTORE_PATH a partir de los secretos del
+    // repositorio. Si no están (por ejemplo, compilando en tu PC), se firma con la clave de depuración.
+    val keystorePath: String? = System.getenv("BISMO_KEYSTORE_PATH")
+    val hasReleaseKey = keystorePath != null && file(keystorePath).exists()
+    signingConfigs {
+        if (hasReleaseKey) {
+            create("release") {
+                storeFile = file(keystorePath!!)
+                storePassword = System.getenv("BISMO_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("BISMO_KEY_ALIAS")
+                keyPassword = System.getenv("BISMO_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig =
+                if (hasReleaseKey) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
         }
     }
 

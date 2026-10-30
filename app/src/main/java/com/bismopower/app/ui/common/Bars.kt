@@ -1,8 +1,12 @@
 package com.bismopower.app.ui.common
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,14 +21,20 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.bismopower.app.player.PlayerConnection
@@ -32,6 +42,8 @@ import com.bismopower.app.player.PlayerUiState
 import com.bismopower.app.ui.theme.LocalBismo
 import com.bismopower.app.ui.theme.T
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlin.math.abs
 
 data class Tab(
     val label: String,
@@ -79,7 +91,12 @@ fun BottomNav(
     }
 }
 
-/** Mini reproductor de vidrio que flota encima de la barra inferior. */
+/**
+ * Mini reproductor de vidrio que flota encima de la barra inferior.
+ *
+ * Gestos: tocar o deslizar hacia arriba = abrir el reproductor;
+ * deslizar a la izquierda / derecha = siguiente / anterior (la tarjeta sigue al dedo).
+ */
 @Composable
 fun MiniPlayerBar(
     state: PlayerUiState,
@@ -87,7 +104,12 @@ fun MiniPlayerBar(
     onOpen: () -> Unit,
 ) {
     val c = LocalBismo.current
+    val scope = rememberCoroutineScope()
+    val s by rememberUpdatedState(state)
+    val open by rememberUpdatedState(onOpen)
     var position by remember { mutableLongStateOf(0L) }
+    val dragX = remember { Animatable(0f) }
+    var widthPx by remember { mutableFloatStateOf(1f) }
     LaunchedEffect(state.currentId, state.isPlaying) {
         position = connection.position()
         while (state.isPlaying) {
@@ -95,12 +117,59 @@ fun MiniPlayerBar(
             position = connection.position()
         }
     }
+
+    /** La tarjeta sale hacia un lado, cambia la canción y vuelve a entrar por el otro. */
+    fun swipeTo(dir: Int) =
+        scope.launch {
+            dragX.animateTo(-dir * widthPx, tween(150))
+            if (dir > 0) connection.nextTrack() else connection.previousTrack()
+            dragX.snapTo(dir * widthPx * 0.6f)
+            dragX.animateTo(0f, spring(dampingRatio = 0.75f, stiffness = 420f))
+        }
+
     Column(
         Modifier
             .padding(horizontal = 14.dp)
             .fillMaxWidth()
-            .glass(Corners.card, strong = true, blur = true)
-            .clickable { onOpen() }
+            .onSizeChanged { widthPx = it.width.toFloat().coerceAtLeast(1f) }
+            .graphicsLayer {
+                translationX = dragX.value
+                alpha = 1f - (abs(dragX.value) / widthPx).coerceIn(0f, 1f) * 0.7f
+            }.glass(Corners.card, strong = true, blur = true)
+            .pointerInput(Unit) {
+                var axis = 0
+                var totalY = 0f
+                detectDragGestures(
+                    onDragStart = {
+                        axis = 0
+                        totalY = 0f
+                    },
+                    onDrag = { change, amount ->
+                        change.consume()
+                        if (axis == 0) axis = if (abs(amount.x) >= abs(amount.y)) 1 else 2
+                        if (axis == 1) {
+                            val towardNext = dragX.value + amount.x < 0f
+                            val free = if (towardNext) s.hasNext else s.hasPrevious
+                            scope.launch { dragX.snapTo(dragX.value + amount.x * if (free) 1f else 0.25f) }
+                        } else {
+                            totalY += amount.y
+                        }
+                    },
+                    onDragEnd = {
+                        if (axis == 1) {
+                            val threshold = widthPx * 0.3f
+                            when {
+                                dragX.value < -threshold && s.hasNext -> swipeTo(1)
+                                dragX.value > threshold && s.hasPrevious -> swipeTo(-1)
+                                else -> scope.launch { dragX.animateTo(0f, spring(dampingRatio = 0.7f, stiffness = 500f)) }
+                            }
+                        } else if (axis == 2 && totalY < -24.dp.toPx()) {
+                            open()
+                        }
+                    },
+                    onDragCancel = { scope.launch { dragX.animateTo(0f) } },
+                )
+            }.clickable { onOpen() }
             .padding(horizontal = 10.dp, vertical = 8.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {

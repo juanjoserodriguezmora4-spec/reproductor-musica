@@ -3,6 +3,7 @@ package com.bismopower.app.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -37,7 +38,7 @@ import com.bismopower.app.ui.common.GlassBackground
 import com.bismopower.app.ui.common.LocalHaze
 import com.bismopower.app.ui.common.MiniPlayerBar
 import com.bismopower.app.ui.library.LibraryScreen
-import com.bismopower.app.ui.player.PlayerSheet
+import com.bismopower.app.ui.player.PlayerScreen
 import com.bismopower.app.ui.settings.SettingsScreen
 import com.bismopower.app.ui.soon.ComingSoonScreen
 import com.bismopower.app.ui.theme.LocalBismo
@@ -116,13 +117,19 @@ fun BismoRoot(
                 BottomNav(tab) { tab = it }
             }
 
-            // Reproductor completo: hoja que sube por encima de todo.
+            // Reproductor a pantalla completa: sube desde el mini reproductor con un rebote suave.
             AnimatedVisibility(
                 visible = sheetOpen,
-                enter = slideInVertically(tween(320)) { it },
-                exit = slideOutVertically(tween(260)) { it },
+                enter = slideInVertically(spring(dampingRatio = 0.86f, stiffness = 380f)) { it } + fadeIn(tween(160)),
+                exit = slideOutVertically(tween(240)) { it } + fadeOut(tween(240)),
             ) {
-                PlayerSheet(onClose = { sheetOpen = false })
+                PlayerScreen(
+                    onClose = { sheetOpen = false },
+                    onOpenEqualizer = {
+                        tab = 2
+                        sheetOpen = false
+                    },
+                )
             }
         }
     }
