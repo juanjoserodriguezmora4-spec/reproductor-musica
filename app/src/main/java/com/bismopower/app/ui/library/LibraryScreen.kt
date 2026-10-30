@@ -94,7 +94,7 @@ private sealed interface Detail {
 }
 
 @Composable
-fun LibraryScreen() {
+fun LibraryScreen(onOpenFolders: () -> Unit = {}) {
     val app = LocalContext.current.container
     val permission = rememberAudioPermission()
     var section by rememberSaveable { mutableIntStateOf(0) }
@@ -131,7 +131,7 @@ fun LibraryScreen() {
         label = "detail",
     ) { d ->
         if (d == null) {
-            Sections(section, { section = it }, onOpen = { detail = it })
+            Sections(section, { section = it }, onOpen = { detail = it }, onOpenFolders = onOpenFolders)
         } else {
             DetailScreen(d, onBack = { detail = null })
         }
@@ -143,6 +143,7 @@ private fun Sections(
     section: Int,
     onSection: (Int) -> Unit,
     onOpen: (Detail) -> Unit,
+    onOpenFolders: () -> Unit,
 ) {
     val app = LocalContext.current.container
     val tracks by app.library.tracks.collectAsState(initial = null)
@@ -150,7 +151,7 @@ private fun Sections(
     val list = tracks
 
     val header: @Composable () -> Unit = {
-        LibraryHeader(section, onSection, list?.size ?: 0)
+        LibraryHeader(section, onSection, list?.size ?: 0, onOpenFolders)
     }
 
     when {
@@ -171,10 +172,12 @@ private fun Sections(
                     EmptyState(
                         BI.Music,
                         "No encontramos música",
-                        "Copia canciones a tu teléfono (por ejemplo a la carpeta Música) y vuelve a buscar.",
+                        "Copia canciones a tu teléfono (por ejemplo a la carpeta Música) o revisa qué carpetas elegiste.",
                         action = "Buscar de nuevo",
                         onAction = { scope.launch { app.library.scan() } },
                     )
+                    Spacer(Modifier.height(10.dp))
+                    PrimaryButton("Elegir carpetas", onOpenFolders, Modifier.fillMaxWidth(), icon = BI.Folder)
                 }
             }
         section == 0 -> SongsSection(list, header)
@@ -189,11 +192,17 @@ private fun LibraryHeader(
     section: Int,
     onSection: (Int) -> Unit,
     total: Int,
+    onOpenFolders: () -> Unit,
 ) {
     val c = LocalBismo.current
     Column(Modifier.fillMaxWidth()) {
-        Text("Biblioteca", style = T.h1, color = c.text)
-        Text(plural(total, "canción", "canciones"), style = T.small, color = c.muted)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Biblioteca", style = T.h1, color = c.text)
+                Text(plural(total, "canción", "canciones"), style = T.small, color = c.muted)
+            }
+            IconChip(BI.Folder, onOpenFolders, size = 40.dp, description = "Elegir carpetas de música")
+        }
         Spacer(Modifier.height(14.dp))
         Segmented(SECTIONS, section, onSection)
     }

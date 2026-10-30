@@ -29,7 +29,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val settings by container.settings.flow.collectAsStateWithLifecycle(initialValue = null as AppSettings?)
             val s = settings
-            BismoTheme(s?.theme ?: "SYSTEM", s?.reduceTransparency ?: false) {
+            BismoTheme(s?.theme ?: "SYSTEM", s?.colorTheme ?: "BRUMA", s?.reduceTransparency ?: false) {
                 if (s == null) {
                     Box(Modifier.fillMaxSize().background(LocalBismo.current.bg))
                 } else {

@@ -1,24 +1,35 @@
 package com.bismopower.app.ui.settings
 
+import android.os.Build
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -28,9 +39,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bismopower.app.BuildConfig
@@ -42,15 +56,16 @@ import com.bismopower.app.ui.common.Segmented
 import com.bismopower.app.ui.common.glass
 import com.bismopower.app.ui.common.plural
 import com.bismopower.app.ui.library.BOTTOM_SPACE
+import com.bismopower.app.ui.theme.COLOR_THEMES
+import com.bismopower.app.ui.theme.DYNAMIC_THEME
 import com.bismopower.app.ui.theme.LocalBismo
 import com.bismopower.app.ui.theme.T
-import com.bismopower.app.ui.theme.blurSupported
 import kotlinx.coroutines.launch
 
 private val THEMES = listOf("SYSTEM", "LIGHT", "DARK")
 
 @Composable
-fun SettingsScreen() {
+fun SettingsScreen(onOpenFolders: () -> Unit = {}) {
     val c = LocalBismo.current
     val app = LocalContext.current.container
     val scope = rememberCoroutineScope()
@@ -85,12 +100,21 @@ fun SettingsScreen() {
                     )
                 }
                 Divider()
+                Column(Modifier.padding(top = 12.dp, bottom = 10.dp)) {
+                    Row(Modifier.padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(BI.Sliders, null, tint = c.muted, modifier = Modifier.size(19.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Text("Color", style = T.body, color = c.text)
+                    }
+                    Spacer(Modifier.size(10.dp))
+                    ColorThemePicker(s.colorTheme) { id -> scope.launch { app.settings.set(SettingsRepository.COLOR_THEME, id) } }
+                }
+                Divider()
                 ToggleRow(
                     BI.Wave,
                     "Reducir transparencia",
-                    if (blurSupported) "Paneles sólidos, sin desenfoque. Ahorra batería." else "Tu versión de Android usa paneles sólidos siempre.",
-                    checked = s.reduceTransparency || !blurSupported,
-                    enabled = blurSupported,
+                    "Paneles opacos y sin desenfoque. Se lee mejor y ahorra batería.",
+                    checked = s.reduceTransparency,
                 ) { scope.launch { app.settings.set(SettingsRepository.REDUCE_TRANSPARENCY, it) } }
             }
         }
@@ -98,6 +122,30 @@ fun SettingsScreen() {
         item { GroupTitle("BIBLIOTECA") }
         item {
             Group {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable { onOpenFolders() }
+                        .padding(horizontal = 14.dp, vertical = 13.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(BI.Folder, null, tint = c.muted, modifier = Modifier.size(19.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Carpetas de música", style = T.body, color = c.text)
+                        Text(
+                            if (s.onlyChosenFolders) {
+                                "Solo " + plural(s.musicFolders.size, "carpeta elegida", "carpetas elegidas")
+                            } else {
+                                "Todas las carpetas del teléfono"
+                            },
+                            style = T.tiny,
+                            color = c.muted,
+                        )
+                    }
+                    Icon(BI.Chevron, null, tint = c.muted, modifier = Modifier.size(18.dp))
+                }
+                Divider()
                 Row(
                     Modifier
                         .fillMaxWidth()
@@ -195,10 +243,72 @@ private fun ToggleRow(
             colors =
                 SwitchDefaults.colors(
                     checkedTrackColor = c.accent,
-                    checkedThumbColor = Color.White,
+                    checkedThumbColor = c.onAccent,
                     uncheckedTrackColor = c.track,
                     uncheckedBorderColor = Color.Transparent,
                 ),
         )
+    }
+}
+
+/** Muestras de color: el círculo de fuera son las manchas del fondo y el punto del centro es el acento. */
+@Composable
+private fun ColorThemePicker(
+    current: String,
+    onPick: (String) -> Unit,
+) {
+    val c = LocalBismo.current
+    val context = LocalContext.current
+    val options =
+        buildList {
+            COLOR_THEMES.forEach { t ->
+                val blobs = if (c.dark) t.darkBlobs else t.lightBlobs
+                add(Triple(t.id, t.name, Triple(blobs[0], blobs[1], if (c.dark) t.darkAccent else t.lightAccent)))
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val d = if (c.dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+                add(Triple(DYNAMIC_THEME, "Fondo de pantalla", Triple(d.primaryContainer, d.tertiaryContainer, d.primary)))
+            }
+        }
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 14.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        items(options, key = { it.first }) { (id, name, colors) ->
+            val on = id == current
+            Column(
+                Modifier
+                    .width(64.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { onPick(id) }
+                    .padding(vertical = 4.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Box(
+                    Modifier
+                        .size(48.dp)
+                        .border(2.5.dp, if (on) colors.third else Color.Transparent, CircleShape)
+                        .padding(5.dp)
+                        .clip(CircleShape)
+                        .background(Brush.linearGradient(listOf(colors.first, colors.second))),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Box(
+                        Modifier
+                            .size(16.dp)
+                            .clip(CircleShape)
+                            .background(colors.third),
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    name,
+                    style = T.tiny,
+                    color = if (on) c.text else c.muted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
     }
 }

@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 import androidx.core.content.ContextCompat
+import com.bismopower.app.data.SettingsRepository
 import com.bismopower.app.data.db.BismoDatabase
 import com.bismopower.app.data.db.TrackEntity
 import kotlinx.coroutines.Dispatchers
@@ -29,10 +30,26 @@ fun hasAudioPermission(context: Context): Boolean =
 /** Carátula del álbum que guarda MediaStore. Coil y Media3 la leen directamente. */
 fun albumArtUri(albumId: Long): Uri = ContentUris.withAppendedId(Uri.parse("content://media/external/audio/albumart"), albumId)
 
-/** Lee la música del teléfono con MediaStore y la guarda en Room para que la biblioteca abra al instante. */
+/** Una carpeta del teléfono que tiene música, para la pantalla de elegir carpetas. */
+data class DeviceFolder(
+    val path: String,
+    val count: Int,
+)
+
+/** true si [folder] es [chosen] o está dentro de ella. */
+fun isInside(
+    folder: String,
+    chosen: String,
+): Boolean = folder == chosen || folder.startsWith(chosen.trimEnd('/') + "/")
+
+/**
+ * Lee la música del teléfono con MediaStore y la guarda en Room para que la biblioteca abra al instante.
+ * Si en Ajustes se eligieron carpetas, solo se guardan las canciones de esas carpetas y sus subcarpetas.
+ */
 class LibraryRepository(
     private val context: Context,
     private val db: BismoDatabase,
+    private val settings: SettingsRepository,
 ) {
     private val dao = db.tracks()
     private val mutex = Mutex()
@@ -65,13 +82,32 @@ class LibraryRepository(
             if (!hasAudioPermission(context)) return 0
             _scanning.value = true
             try {
-                val found = withContext(Dispatchers.IO) { query() }
+                val s = settings.current()
+                val all = withContext(Dispatchers.IO) { query() }
+                val found =
+                    if (s.onlyChosenFolders) {
+                        all.filter { t -> s.musicFolders.any { isInside(t.folder, it) } }
+                    } else {
+                        all
+                    }
                 dao.replaceAll(found)
                 found.size
             } finally {
                 _scanning.value = false
             }
         }
+
+    /** Todas las carpetas del teléfono que tienen música (sin aplicar el filtro), ordenadas por ruta. */
+    suspend fun deviceFolders(): List<DeviceFolder> {
+        if (!hasAudioPermission(context)) return emptyList()
+        return withContext(Dispatchers.IO) {
+            query()
+                .groupingBy { it.folder }
+                .eachCount()
+                .map { (path, count) -> DeviceFolder(path, count) }
+                .sortedBy { it.path.lowercase() }
+        }
+    }
 
     @Suppress("DEPRECATION") // DATA sigue siendo la forma más fiable de saber la carpeta.
     private fun query(): List<TrackEntity> {

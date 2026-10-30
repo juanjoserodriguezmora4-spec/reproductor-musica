@@ -90,8 +90,8 @@ import com.bismopower.app.player.PlayerUiState
 import com.bismopower.app.ui.common.BI
 import com.bismopower.app.ui.common.Thumb
 import com.bismopower.app.ui.common.fmtDuration
-import com.bismopower.app.ui.theme.DarkBismo
 import com.bismopower.app.ui.theme.LocalBismo
+import com.bismopower.app.ui.theme.LocalBismoDark
 import com.bismopower.app.ui.theme.LocalSolid
 import com.bismopower.app.ui.theme.T
 import kotlinx.coroutines.delay
@@ -120,6 +120,7 @@ fun PlayerScreen(
     onOpenEqualizer: () -> Unit,
 ) {
     val appDark = LocalBismo.current.dark
+    val darkColors = LocalBismoDark.current
     val player = LocalContext.current.container.player
     val s by player.state.collectAsStateWithLifecycle()
     val queue by player.queue.collectAsStateWithLifecycle()
@@ -154,7 +155,7 @@ fun PlayerScreen(
     // Desplazamiento vertical de toda la pantalla al arrastrarla hacia abajo para cerrarla.
     val sheetY = remember { Animatable(0f) }
 
-    CompositionLocalProvider(LocalBismo provides DarkBismo) {
+    CompositionLocalProvider(LocalBismo provides darkColors) {
         BoxWithConstraints(
             Modifier
                 .fillMaxSize()

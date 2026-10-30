@@ -32,7 +32,7 @@ class AppContainer(
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     val db = BismoDatabase.build(app)
     val settings = SettingsRepository(app)
-    val library = LibraryRepository(app, db)
+    val library = LibraryRepository(app, db, settings)
     val player = PlayerConnection(app)
 
     /** Cadena de efectos de audio que usa ExoPlayer (el ecualizador vive aquí). */

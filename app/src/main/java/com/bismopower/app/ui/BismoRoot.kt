@@ -7,7 +7,9 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -40,6 +42,7 @@ import com.bismopower.app.ui.common.MiniPlayerBar
 import com.bismopower.app.ui.equalizer.EqualizerScreen
 import com.bismopower.app.ui.library.LibraryScreen
 import com.bismopower.app.ui.player.PlayerScreen
+import com.bismopower.app.ui.settings.FolderPickerScreen
 import com.bismopower.app.ui.settings.SettingsScreen
 import com.bismopower.app.ui.soon.ComingSoonScreen
 import com.bismopower.app.ui.theme.LocalBismo
@@ -56,6 +59,7 @@ fun BismoRoot(
     val player by app.player.state.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var sheetOpen by rememberSaveable { mutableStateOf(false) }
+    var foldersOpen by rememberSaveable { mutableStateOf(false) }
     val holder = rememberSaveableStateHolder()
     val solid = LocalSolid.current
     val haze = rememberHazeState(blurEnabled = !solid)
@@ -65,6 +69,7 @@ fun BismoRoot(
         if (startRoute == "player") sheetOpen = true
         if (startRoute != null) onRouteConsumed()
     }
+    BackHandler(enabled = foldersOpen && !sheetOpen) { foldersOpen = false }
     BackHandler(enabled = sheetOpen) { sheetOpen = false }
 
     CompositionLocalProvider(LocalHaze provides haze) {
@@ -74,7 +79,7 @@ fun BismoRoot(
                 Crossfade(tab, animationSpec = tween(180), label = "tab") { t ->
                     holder.SaveableStateProvider(t) {
                         when (t) {
-                            0 -> LibraryScreen()
+                            0 -> LibraryScreen(onOpenFolders = { foldersOpen = true })
                             1 ->
                                 ComingSoonScreen(
                                     title = "Listas",
@@ -82,7 +87,7 @@ fun BismoRoot(
                                     text = "Pronto podrás crear listas, ver tus favoritas y lo que más escuchas.",
                                 )
                             2 -> EqualizerScreen()
-                            else -> SettingsScreen()
+                            else -> SettingsScreen(onOpenFolders = { foldersOpen = true })
                         }
                     }
                 }
@@ -111,6 +116,15 @@ fun BismoRoot(
                     MiniPlayerBar(player, app.player) { sheetOpen = true }
                 }
                 BottomNav(tab) { tab = it }
+            }
+
+            // Elegir carpetas de música: entra desde la derecha, por encima de las pestañas.
+            AnimatedVisibility(
+                visible = foldersOpen,
+                enter = slideInHorizontally(tween(260)) { it } + fadeIn(tween(200)),
+                exit = slideOutHorizontally(tween(220)) { it } + fadeOut(tween(200)),
+            ) {
+                FolderPickerScreen(onClose = { foldersOpen = false })
             }
 
             // Reproductor a pantalla completa: sube desde el mini reproductor con un rebote suave.

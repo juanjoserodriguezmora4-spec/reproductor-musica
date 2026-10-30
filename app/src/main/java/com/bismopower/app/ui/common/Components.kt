@@ -103,10 +103,10 @@ fun PrimaryButton(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (icon != null) {
-            Icon(icon, null, tint = Color.White, modifier = Modifier.size(17.dp))
+            Icon(icon, null, tint = c.onAccent, modifier = Modifier.size(17.dp))
             Spacer(Modifier.width(7.dp))
         }
-        Text(text, style = T.label, color = if (enabled) Color.White else c.muted)
+        Text(text, style = T.label, color = if (enabled) c.onAccent else c.muted)
     }
 }
 

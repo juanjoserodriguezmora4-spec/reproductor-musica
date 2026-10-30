@@ -28,10 +28,11 @@ app/src/main/java/com/bismopower/app/
   audio/Biquad.kt          Fórmulas de los filtros (Audio EQ Cookbook) y respuesta en dB
   audio/EqSettings.kt      Ajustes del ecualizador (inmutables), presets, guardar/leer como texto
   data/EqRepository.kt     Estado del ecualizador: lo guarda (DataStore "equalizer") y lo aplica
-  ui/equalizer/            Pantalla del ecualizador (curva, barras, editor de banda, tono)
-  data/Settings.kt         DataStore: tema, reducir transparencia
+  ui/equalizer/            Pantalla del ecualizador (visor oscuro con curva, faders, perillas)
+  ui/settings/FolderPicker Elegir carpetas de música (overlay desde Biblioteca o Ajustes)
+  data/Settings.kt         DataStore: tema, color, reducir transparencia, carpetas de música
   data/db/BismoDatabase.kt Room: TrackEntity, consultas de álbumes/artistas/carpetas
-  library/                 Escaneo de MediaStore → Room, permiso de audio, URI de carátulas
+  library/                 Escaneo de MediaStore → Room (filtrado por carpetas), permiso de audio, carátulas
   player/PlaybackService   MediaSessionService con ExoPlayer
   player/PlayerConnection  MediaController + StateFlow<PlayerUiState> para la UI
   ui/theme/Theme.kt        Colores, tipografía Inter, LocalSolid
@@ -88,12 +89,18 @@ canción en los controles.
 | Borde            | Blanco 90 %                                 | Blanco 12 %                                      |
 | Texto principal  | #121826                                     | #EEF1F8                                          |
 | Texto secundario | #5B6475                                     | #9AA3B5                                          |
-| Acento           | #4B5BFF                                     | #8B98FF                                          |
+| Acento           | Según el tema de color (Bruma: #4B5BFF)     | Según el tema de color (Bruma: #8B98FF)          |
 | Esquinas         | Tarjetas 20 dp, botones 14 dp, barra inferior 26 dp | Iguales                                  |
 
+Temas de color (`COLOR_THEMES` en `Theme.kt`): Bruma, Océano, Atardecer, Bosque, Uva,
+Cereza, Grafito y "Fondo de pantalla" (Material You, Android 12+). Cada tema solo define
+acento, `onAccent` y las 4 manchas en claro y oscuro; el resto del vidrio es igual.
+Encima del acento siempre se usa `c.onAccent`, nunca `Color.White` fijo.
+`LocalBismoDark` es la versión oscura del tema actual (la usa el reproductor).
+
 Reglas:
-- Android 8 a 11 (sin desenfoque eficiente) o "Reducir transparencia": paneles sólidos
-  al 85 % sin blur (`LocalSolid`, colores `solid`).
+- "Reducir transparencia": paneles 100 % opacos sin blur. Android 8 a 11 sin esa opción:
+  paneles al 85 % sin blur (`LocalSolid`, colores `solid`).
 - Solo las barras flotantes (barra inferior y mini reproductor) desenfocan de verdad;
   las tarjetas de las listas solo tienen detrás las manchas del fondo, que ya están
   difuminadas, así que usan el tinte translúcido y la app va fluida en celulares viejos.
@@ -124,8 +131,12 @@ Reglas:
   - Los ajustes llegan desde la UI con `update()` (objeto inmutable + @Volatile); el hilo
     de audio recalcula coeficientes cuando cambia la versión, la frecuencia o los canales
   - Presets de fábrica; cualquier cambio a mano pasa a "Personalizado"
-  - Pantalla: curva de respuesta con puntos arrastrables (frecuencia + ganancia), barras
-    verticales (doble toque = 0), editor de banda, tono y limitador
+  - Pantalla (rediseño 0.3): visor oscuro tipo equipo de sonido con lectura de la banda
+    elegida (cifras tabulares, `tnum`) y la curva con brillo; faders de consola con marcas
+    cada 6 dB; editor de banda y tono con perillas (arrastrar arriba/abajo, doble toque =
+    valor normal); paneles con `glass(strong = true)` para que se lea mejor
+- Biblioteca: elegir carpetas de música (todas o solo las marcadas, con subcarpetas);
+  el filtro se aplica en `LibraryRepository.scan()`
 - 2b (siguiente) Listas de reproducción (Room), favoritas, más escuchadas
 - 2c Cola: reordenar arrastrando; temporizador de apagado; búsqueda
 - Pendiente del ecualizador: presets propios con nombre, onda real en el reproductor
