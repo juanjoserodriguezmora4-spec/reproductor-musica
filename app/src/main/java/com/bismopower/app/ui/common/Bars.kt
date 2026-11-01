@@ -173,7 +173,7 @@ fun MiniPlayerBar(
             .padding(horizontal = 10.dp, vertical = 8.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Thumb(state.artwork, state.album.ifBlank { state.title }, Modifier.size(40.dp), corner = 10.dp, icon = BI.Music)
+            Thumb(state.artwork, state.artKey, Modifier.size(40.dp), corner = 10.dp, icon = BI.Music)
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Text(state.title, style = T.small, color = c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)

@@ -19,6 +19,7 @@ import com.bismopower.app.library.TrackArtBitmapLoader
 import com.bismopower.app.ui.MainActivity
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import kotlinx.coroutines.launch
 
 const val EXTRA_ROUTE = "route"
 
@@ -27,6 +28,7 @@ const val EXTRA_ROUTE = "route"
 class PlaybackService : MediaSessionService() {
     private var session: MediaSession? = null
     private var artLoader: TrackArtBitmapLoader? = null
+    private var counter: PlayCounter? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -62,6 +64,10 @@ class PlaybackService : MediaSessionService() {
                 .build()
                 .apply { setSmallIcon(R.drawable.ic_stat_bismo) },
         )
+
+        // Cuenta las reproducciones para "Más escuchadas" y "Escuchadas hace poco".
+        val app = container
+        counter = PlayCounter(player) { id -> app.appScope.launch { app.playlists.recordPlay(id) } }.also { it.attach() }
 
         // Carga la carátula de cada canción (también las de Bruma) para la notificación y la pantalla de bloqueo.
         val loader = TrackArtBitmapLoader(this)
@@ -100,6 +106,8 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        counter?.release()
+        counter = null
         session?.run {
             player.release()
             release()

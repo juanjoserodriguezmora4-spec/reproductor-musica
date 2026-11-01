@@ -12,7 +12,8 @@ Reproductor de música local para Android con el diseño de vidrio esmerilado de
 - Ecualizador paramétrico de 10 bandas: curva que se arrastra con el dedo, presets,
   preamplificador, graves, agudos y limitador
 
-Próximamente: listas de reproducción, favoritas y temporizador.
+- Listas de reproducción, favoritas, más escuchadas y escuchadas hace poco
+- Cola que se reordena arrastrando, temporizador para dormir y búsqueda
 
 ## Descargar
 

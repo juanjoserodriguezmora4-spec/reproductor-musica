@@ -30,7 +30,6 @@ import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeStyle
 import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.hazeEffect
-import kotlin.math.abs
 
 /** Esquinas del sistema de diseño. */
 object Corners {
@@ -152,18 +151,20 @@ private val SPOTS =
         Triple(0.95f, 0.98f, 0.70f),
     )
 
-private val gradients =
-    listOf(
-        listOf(Color(0xFF7FA3FF), Color(0xFFB78CFF)),
-        listOf(Color(0xFFFFB38A), Color(0xFFFF7BA9)),
-        listOf(Color(0xFF8ED8C8), Color(0xFF6FA8FF)),
-        listOf(Color(0xFFC8B2FF), Color(0xFFFFC4D8)),
-        listOf(Color(0xFF3CCFB4), Color(0xFF4B7BFF)),
-        listOf(Color(0xFF8A7BFF), Color(0xFFE07AB0)),
+/**
+ * Degradado de respaldo cuando no hay carátula: siempre el mismo para el mismo nombre, pero
+ * distinto entre nombres distintos (el tono sale del nombre, así hay cientos de combinaciones).
+ * Colores pastel vivos, como los de Bruma.
+ */
+fun gradientFor(key: String): List<Color> {
+    val h = key.hashCode()
+    val hue = ((h ushr 1) % 360).toFloat()
+    val shift = 30f + ((h ushr 9) % 60)
+    return listOf(
+        Color.hsv(hue, 0.42f, 0.98f),
+        Color.hsv((hue + shift) % 360f, 0.58f, 0.90f),
     )
-
-/** Degradado de respaldo de Bruma: siempre el mismo para el mismo nombre (de álbum, artista…). */
-fun gradientFor(key: String): List<Color> = gradients[abs(key.hashCode()) % gradients.size]
+}
 
 /** Miniatura o carátula; si no hay imagen (o no carga) se ve el degradado. */
 @Composable

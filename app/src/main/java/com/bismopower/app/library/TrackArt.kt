@@ -9,6 +9,8 @@ import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
 import android.util.Size
+import com.bismopower.app.data.db.TrackEntity
+import java.io.File
 
 /** Esquema propio para pedir la carátula de una canción: bismoart://track/<id>?album=<albumId> */
 const val ART_SCHEME = "bismoart"
@@ -21,14 +23,38 @@ const val ART_SCHEME = "bismoart"
 fun trackArtUri(
     trackId: Long,
     albumId: Long,
+    useAlbumArt: Boolean = true,
 ): Uri =
     Uri
         .Builder()
         .scheme(ART_SCHEME)
         .authority("track")
         .appendPath(trackId.toString())
-        .appendQueryParameter("album", albumId.toString())
+        .apply { if (useAlbumArt) appendQueryParameter("album", albumId.toString()) }
         .build()
+
+/** Nombre que pone BismoPower cuando la canción no trae álbum. */
+const val UNKNOWN_ALBUM = "Álbum desconocido"
+
+/**
+ * true si la canción trae un álbum de verdad. Cuando un archivo no tiene álbum, Android le
+ * pone el nombre de su carpeta (por ejemplo "Bruma" o "Download") y junta ahí canciones que
+ * no tienen nada que ver; esa carátula de "álbum" sería la de una sola de ellas.
+ */
+fun TrackEntity.hasRealAlbum(): Boolean {
+    val a = album.trim()
+    if (a.isEmpty() || a == UNKNOWN_ALBUM || a.equals("<unknown>", ignoreCase = true)) return false
+    return !a.equals(File(folder).name, ignoreCase = true)
+}
+
+/** Carátula de la canción. Solo usa la del álbum como respaldo si el álbum es de verdad. */
+fun TrackEntity.artUri(): Uri = trackArtUri(id, albumId, useAlbumArt = hasRealAlbum())
+
+/**
+ * Clave del degradado que se ve cuando no hay carátula: las canciones de un mismo álbum
+ * comparten color; las sueltas (como las de Bruma) tienen cada una el suyo.
+ */
+fun TrackEntity.artKey(): String = if (hasRealAlbum()) album else "$title·$artist"
 
 /** Lee carátulas. Hace trabajo de disco: llamar siempre fuera del hilo principal. */
 object ArtLoader {

@@ -162,7 +162,7 @@ class LibraryRepository(
                         uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, trackId).toString(),
                         title = c.getString(title)?.takeIf { it.isNotBlank() } ?: path?.let { File(it).nameWithoutExtension } ?: "Sin título",
                         artist = rawArtist?.takeIf { it.isNotBlank() && it != MediaStore.UNKNOWN_STRING } ?: "Artista desconocido",
-                        album = c.getString(album)?.takeIf { it.isNotBlank() } ?: "Álbum desconocido",
+                        album = c.getString(album)?.takeIf { it.isNotBlank() } ?: UNKNOWN_ALBUM,
                         albumId = c.getLong(albumId),
                         durationMs = c.getLong(duration),
                         trackNumber = c.getInt(track) % 1000, // Algunos formatos guardan disco × 1000 + pista.

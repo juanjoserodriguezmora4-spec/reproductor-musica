@@ -173,4 +173,10 @@ object BI {
         build("sliders", listOf("M6 3v18", "M12 3v18", "M18 3v18"), listOf(circ(6f, 15f, 2.4f), circ(12f, 8f, 2.4f), circ(18f, 13f, 2.4f)))
     }
     val ListMusic by lazy { build("list_music", listOf("M3 6h12", "M3 12h12", "M3 18h7", "M19 18V6l2 1", circ(16.5f, 18f, 2.5f))) }
+    val Heart by lazy { build("heart", listOf("M12 20.5s-7.6-4.6-9.3-9.4C1.6 7.9 3.6 4.5 7.2 4.5c2 0 3.6 1.1 4.8 2.9 1.2-1.8 2.8-2.9 4.8-2.9 3.6 0 5.6 3.4 4.5 6.6-1.7 4.8-9.3 9.4-9.3 9.4z")) }
+    val HeartFill by lazy { build("heart_fill", listOf("M12 20.5s-7.6-4.6-9.3-9.4C1.6 7.9 3.6 4.5 7.2 4.5c2 0 3.6 1.1 4.8 2.9 1.2-1.8 2.8-2.9 4.8-2.9 3.6 0 5.6 3.4 4.5 6.6-1.7 4.8-9.3 9.4-9.3 9.4z"), listOf("M12 20.5s-7.6-4.6-9.3-9.4C1.6 7.9 3.6 4.5 7.2 4.5c2 0 3.6 1.1 4.8 2.9 1.2-1.8 2.8-2.9 4.8-2.9 3.6 0 5.6 3.4 4.5 6.6-1.7 4.8-9.3 9.4-9.3 9.4z")) }
+    val Grip by lazy { build("grip", listOf("M5 9h14", "M5 15h14")) }
+    val TrendUp by lazy { build("trend_up", listOf("M3 17l6-6 4 4 8-8", "M15 7h6v6")) }
+    val History by lazy { build("history", listOf("M3.5 12a8.5 8.5 0 1 0 2.7-6.2", "M3 4v4.5h4.5", "M12 8v4.5l3 2")) }
+    val PlayNext by lazy { build("play_next", listOf("M3 12h11", "M3 18h11"), listOf("M14 3v7l6-3.5z")) }
 }

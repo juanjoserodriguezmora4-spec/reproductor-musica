@@ -28,6 +28,9 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -41,15 +44,23 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bismopower.app.container
 import com.bismopower.app.data.db.AlbumRow
 import com.bismopower.app.data.db.ArtistRow
 import com.bismopower.app.data.db.FolderRow
 import com.bismopower.app.data.db.TrackEntity
+import com.bismopower.app.library.artKey
+import com.bismopower.app.library.artUri
 import com.bismopower.app.library.trackArtUri
 import com.bismopower.app.ui.common.BI
 import com.bismopower.app.ui.common.Corners
@@ -63,10 +74,12 @@ import com.bismopower.app.ui.common.fmtDuration
 import com.bismopower.app.ui.common.glass
 import com.bismopower.app.ui.common.glassSegment
 import com.bismopower.app.ui.common.plural
+import com.bismopower.app.ui.sheets.TrackMoreButton
 import com.bismopower.app.ui.theme.LocalBismo
 import com.bismopower.app.ui.theme.T
-import kotlinx.coroutines.launch
 import java.io.File
+import java.text.Normalizer
+import kotlinx.coroutines.launch
 
 /** Espacio libre al final de las listas para que el mini reproductor y la barra no tapen nada. */
 val BOTTOM_SPACE = 190.dp
@@ -99,9 +112,15 @@ fun LibraryScreen(onOpenFolders: () -> Unit = {}) {
     val permission = rememberAudioPermission()
     var section by rememberSaveable { mutableIntStateOf(0) }
     var detail by remember { mutableStateOf<Detail?>(null) }
+    var searching by rememberSaveable { mutableStateOf(false) }
+    var query by rememberSaveable { mutableStateOf("") }
 
     LaunchedEffect(permission.granted) {
         if (permission.granted) app.library.scanOnce()
+    }
+    BackHandler(enabled = searching && detail == null) {
+        searching = false
+        query = ""
     }
     BackHandler(enabled = detail != null) { detail = null }
 
@@ -131,7 +150,19 @@ fun LibraryScreen(onOpenFolders: () -> Unit = {}) {
         label = "detail",
     ) { d ->
         if (d == null) {
-            Sections(section, { section = it }, onOpen = { detail = it }, onOpenFolders = onOpenFolders)
+            if (searching) {
+                SearchScreen(
+                    query = query,
+                    onQuery = { query = it },
+                    onClose = {
+                        searching = false
+                        query = ""
+                    },
+                    onOpen = { detail = it },
+                )
+            } else {
+                Sections(section, { section = it }, onOpen = { detail = it }, onOpenFolders = onOpenFolders, onSearch = { searching = true })
+            }
         } else {
             DetailScreen(d, onBack = { detail = null })
         }
@@ -144,6 +175,7 @@ private fun Sections(
     onSection: (Int) -> Unit,
     onOpen: (Detail) -> Unit,
     onOpenFolders: () -> Unit,
+    onSearch: () -> Unit,
 ) {
     val app = LocalContext.current.container
     val tracks by app.library.tracks.collectAsState(initial = null)
@@ -151,7 +183,7 @@ private fun Sections(
     val list = tracks
 
     val header: @Composable () -> Unit = {
-        LibraryHeader(section, onSection, list?.size ?: 0, onOpenFolders)
+        LibraryHeader(section, onSection, list?.size ?: 0, onOpenFolders, onSearch)
     }
 
     when {
@@ -193,6 +225,7 @@ private fun LibraryHeader(
     onSection: (Int) -> Unit,
     total: Int,
     onOpenFolders: () -> Unit,
+    onSearch: () -> Unit,
 ) {
     val c = LocalBismo.current
     Column(Modifier.fillMaxWidth()) {
@@ -201,6 +234,8 @@ private fun LibraryHeader(
                 Text("Biblioteca", style = T.h1, color = c.text)
                 Text(plural(total, "canción", "canciones"), style = T.small, color = c.muted)
             }
+            IconChip(BI.Search, onSearch, size = 40.dp, description = "Buscar en la biblioteca")
+            Spacer(Modifier.width(8.dp))
             IconChip(BI.Folder, onOpenFolders, size = 40.dp, description = "Elegir carpetas de música")
         }
         Spacer(Modifier.height(14.dp))
@@ -229,7 +264,7 @@ private fun SongsSection(
 }
 
 @Composable
-private fun PlayButtons(
+internal fun PlayButtons(
     tracks: List<TrackEntity>,
     modifier: Modifier = Modifier,
 ) {
@@ -272,9 +307,10 @@ private fun LazyListScope.trackItems(
                         Text(if (t.trackNumber > 0) "${t.trackNumber}" else "·", style = T.small, color = c.muted)
                     }
                 } else {
-                    Thumb(trackArtUri(t.id, t.albumId), t.album, Modifier.size(44.dp), corner = 10.dp, icon = BI.Music)
+                    Thumb(t.artUri(), t.artKey(), Modifier.size(44.dp), corner = 10.dp, icon = BI.Music)
                 }
             },
+            trailing = { TrackMoreButton(t) },
             onClick = { app.player.play(tracks, i) },
             modifier =
                 Modifier
@@ -447,7 +483,7 @@ private fun DetailScreen(
                 IconChip(BI.Back, onBack, description = "Volver")
                 Spacer(Modifier.height(16.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    val art = tracks.firstOrNull()?.let { trackArtUri(it.id, it.albumId) }
+                    val art = tracks.firstOrNull()?.artUri()
                     val icon =
                         when (d) {
                             is Detail.Album -> BI.Disc
@@ -475,3 +511,159 @@ private fun DetailScreen(
         trackItems(tracks, current.currentId, numbered = d is Detail.Album)
     }
 }
+
+// ---------------------------------------------------------------- búsqueda
+
+/** Quita tildes y pasa a minúsculas: así "cancion" encuentra "Canción". */
+private fun fold(text: String): String = Normalizer.normalize(text, Normalizer.Form.NFD).replace(MARKS, "").lowercase()
+
+private val MARKS = Regex("\\p{Mn}+")
+
+/** true si todas las palabras de la búsqueda aparecen en el texto (en cualquier orden). */
+private fun matches(
+    haystack: String,
+    words: List<String>,
+): Boolean = words.all { haystack.contains(it) }
+
+/**
+ * Busca mientras escribes en canciones, artistas y álbumes. Varias palabras se buscan
+ * todas a la vez: "shakira loba" encuentra "Loba" de Shakira.
+ */
+@Composable
+private fun SearchScreen(
+    query: String,
+    onQuery: (String) -> Unit,
+    onClose: () -> Unit,
+    onOpen: (Detail) -> Unit,
+) {
+    val c = LocalBismo.current
+    val app = LocalContext.current.container
+    val tracks by app.library.tracks.collectAsState(initial = emptyList())
+    val albums by app.library.albums.collectAsState(initial = emptyList())
+    val artists by app.library.artists.collectAsState(initial = emptyList())
+    val current by app.player.state.collectAsStateWithLifecycle()
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+
+    // El texto de cada canción se prepara una sola vez, no en cada letra.
+    val index = remember(tracks) { tracks.map { it to fold("${it.title} ${it.artist} ${it.album}") } }
+    val words = remember(query) { fold(query).split(' ').filter { it.isNotBlank() } }
+    val songs = remember(index, words) { if (words.isEmpty()) emptyList() else index.filter { matches(it.second, words) }.map { it.first } }
+    val foundArtists = remember(artists, words) { if (words.isEmpty()) emptyList() else artists.filter { matches(fold(it.artist), words) }.take(4) }
+    val foundAlbums =
+        remember(albums, words) {
+            if (words.isEmpty()) emptyList() else albums.filter { matches(fold("${it.album} ${it.artist}"), words) }.take(4)
+        }
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .statusBarsPadding(),
+    ) {
+        Row(
+            Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconChip(BI.Back, onClose, size = 40.dp, description = "Cerrar la búsqueda")
+            Spacer(Modifier.width(10.dp))
+            BasicTextField(
+                value = query,
+                onValueChange = onQuery,
+                singleLine = true,
+                textStyle = T.body.copy(color = c.text, fontSize = 16.sp),
+                cursorBrush = SolidColor(c.accent),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                modifier =
+                    Modifier
+                        .weight(1f)
+                        .focusRequester(focus),
+                decorationBox = { inner ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .glass(Corners.button, strong = true, shadow = false)
+                            .padding(start = 12.dp, end = 6.dp)
+                            .height(44.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        androidx.compose.material3.Icon(BI.Search, null, tint = c.muted, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(10.dp))
+                        Box(Modifier.weight(1f)) {
+                            if (query.isEmpty()) Text("Canción, artista o álbum", style = T.body.copy(fontSize = 16.sp), color = c.muted)
+                            inner()
+                        }
+                        if (query.isNotEmpty()) {
+                            androidx.compose.material3.Icon(
+                                BI.Close,
+                                "Borrar",
+                                tint = c.muted,
+                                modifier =
+                                    Modifier
+                                        .size(32.dp)
+                                        .clip(CircleShape)
+                                        .clickable { onQuery("") }
+                                        .padding(8.dp),
+                            )
+                        }
+                    }
+                },
+            )
+        }
+
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = listPadding) {
+            when {
+                words.isEmpty() ->
+                    item(key = "hint") {
+                        Text(
+                            "Escribe para buscar entre ${plural(tracks.size, "canción", "canciones")}.",
+                            style = T.small,
+                            color = c.muted,
+                            modifier = Modifier.padding(start = 6.dp),
+                        )
+                    }
+                songs.isEmpty() && foundArtists.isEmpty() && foundAlbums.isEmpty() ->
+                    item(key = "empty") {
+                        EmptyState(BI.Search, "Nada para «$query»", "Prueba con otra palabra o revisa qué carpetas elegiste.")
+                    }
+                else -> {
+                    if (foundArtists.isNotEmpty()) {
+                        item(key = "h-artists") { SearchHeading("Artistas") }
+                        itemsIndexed(foundArtists, key = { _, a -> "artist-${a.artist}" }) { i, a ->
+                            ArtistRowItem(a, i, foundArtists.size) { onOpen(Detail.Artist(a.artist)) }
+                        }
+                    }
+                    if (foundAlbums.isNotEmpty()) {
+                        item(key = "h-albums") { SearchHeading("Álbumes") }
+                        itemsIndexed(foundAlbums, key = { _, a -> "album-${a.albumId}" }) { i, a ->
+                            ListRow(
+                                title = a.album,
+                                subtitle = "${a.artist} · ${plural(a.count, "canción", "canciones")}",
+                                leading = { Thumb(trackArtUri(a.firstTrackId, a.albumId), a.album, Modifier.size(44.dp), corner = 10.dp, icon = BI.Disc) },
+                                onClick = { onOpen(Detail.Album(a.albumId, a.album, a.artist)) },
+                                modifier =
+                                    Modifier
+                                        .glassSegment(i, foundAlbums.size)
+                                        .padding(horizontal = 6.dp, vertical = if (i == 0 || i == foundAlbums.size - 1) 4.dp else 0.dp),
+                            )
+                        }
+                    }
+                    if (songs.isNotEmpty()) {
+                        item(key = "h-songs") { SearchHeading(plural(songs.size, "canción", "canciones")) }
+                        trackItems(songs, current.currentId)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchHeading(text: String) {
+    Text(
+        text,
+        style = T.h2,
+        color = LocalBismo.current.text,
+        modifier = Modifier.padding(start = 6.dp, top = 14.dp, bottom = 8.dp),
+    )
+}
+

@@ -24,6 +24,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
@@ -34,7 +35,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bismopower.app.container
-import com.bismopower.app.ui.common.BI
 import com.bismopower.app.ui.common.BottomNav
 import com.bismopower.app.ui.common.GlassBackground
 import com.bismopower.app.ui.common.LocalHaze
@@ -42,9 +42,12 @@ import com.bismopower.app.ui.common.MiniPlayerBar
 import com.bismopower.app.ui.equalizer.EqualizerScreen
 import com.bismopower.app.ui.library.LibraryScreen
 import com.bismopower.app.ui.player.PlayerScreen
+import com.bismopower.app.ui.playlists.PlaylistsScreen
 import com.bismopower.app.ui.settings.FolderPickerScreen
+import com.bismopower.app.ui.sheets.LocalSheets
+import com.bismopower.app.ui.sheets.SheetController
+import com.bismopower.app.ui.sheets.SheetHost
 import com.bismopower.app.ui.settings.SettingsScreen
-import com.bismopower.app.ui.soon.ComingSoonScreen
 import com.bismopower.app.ui.theme.LocalBismo
 import com.bismopower.app.ui.theme.LocalSolid
 import dev.chrisbanes.haze.hazeSource
@@ -63,6 +66,7 @@ fun BismoRoot(
     val holder = rememberSaveableStateHolder()
     val solid = LocalSolid.current
     val haze = rememberHazeState(blurEnabled = !solid)
+    val sheets = remember { SheetController() }
 
     LaunchedEffect(Unit) { app.player.connect() }
     LaunchedEffect(startRoute) {
@@ -72,7 +76,7 @@ fun BismoRoot(
     BackHandler(enabled = foldersOpen && !sheetOpen) { foldersOpen = false }
     BackHandler(enabled = sheetOpen) { sheetOpen = false }
 
-    CompositionLocalProvider(LocalHaze provides haze) {
+    CompositionLocalProvider(LocalHaze provides haze, LocalSheets provides sheets) {
         Box(Modifier.fillMaxSize()) {
             // Capa 1 y contenido: lo que las barras de vidrio desenfocan al pasar por encima.
             GlassBackground(Modifier.hazeSource(haze), seed = tab) {
@@ -80,12 +84,7 @@ fun BismoRoot(
                     holder.SaveableStateProvider(t) {
                         when (t) {
                             0 -> LibraryScreen(onOpenFolders = { foldersOpen = true })
-                            1 ->
-                                ComingSoonScreen(
-                                    title = "Listas",
-                                    icon = BI.ListMusic,
-                                    text = "Pronto podrás crear listas, ver tus favoritas y lo que más escuchas.",
-                                )
+                            1 -> PlaylistsScreen()
                             2 -> EqualizerScreen()
                             else -> SettingsScreen(onOpenFolders = { foldersOpen = true })
                         }
@@ -141,6 +140,9 @@ fun BismoRoot(
                     },
                 )
             }
+
+            // Menús y hojas de acciones (canción, listas, temporizador): encima de todo, incluso del reproductor.
+            SheetHost(sheets)
         }
     }
 }

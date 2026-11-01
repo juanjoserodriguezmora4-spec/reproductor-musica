@@ -88,6 +88,9 @@ import com.bismopower.app.container
 import com.bismopower.app.player.PlayerConnection
 import com.bismopower.app.player.PlayerUiState
 import com.bismopower.app.ui.common.BI
+import com.bismopower.app.ui.sheets.LocalSheets
+import com.bismopower.app.ui.sheets.Sheet
+import com.bismopower.app.ui.sheets.sleepLabel
 import com.bismopower.app.ui.common.Thumb
 import com.bismopower.app.ui.common.fmtDuration
 import com.bismopower.app.ui.theme.LocalBismo
@@ -124,9 +127,13 @@ fun PlayerScreen(
     val player = LocalContext.current.container.player
     val s by player.state.collectAsStateWithLifecycle()
     val queue by player.queue.collectAsStateWithLifecycle()
+    val app = LocalContext.current.container
+    val sheets = LocalSheets.current
+    val favs by app.playlists.favoriteIds.collectAsStateWithLifecycle(initialValue = emptySet())
+    val sleep by app.sleepTimer.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
-    val colors = rememberPlayerColors(s.artwork, s.album.ifBlank { s.title })
+    val colors = rememberPlayerColors(s.artwork, s.artKey)
     var queueOpen by remember { mutableStateOf(false) }
 
     // Íconos claros en la barra de estado mientras el reproductor está abierto.
@@ -188,7 +195,7 @@ fun PlayerScreen(
                     .padding(horizontal = 20.dp, vertical = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                TopBar(s, onClose = onClose, onQueue = { queueOpen = true })
+                TopBar(s, sleepLabel(sleep), onClose = onClose, onQueue = { queueOpen = true })
 
                 if (s.currentId == null) {
                     Spacer(Modifier.weight(1f))
@@ -236,13 +243,18 @@ fun PlayerScreen(
 
                 MainControls(s, player, colors.accent)
                 Spacer(Modifier.height(16.dp))
+                val id = s.currentId
                 SecondaryControls(
                     s = s,
                     accent = colors.accent,
+                    favorite = id != null && id in favs,
+                    sleeping = sleep.active,
                     onShuffle = { player.setShuffle(!s.shuffle) },
                     onRepeat = { player.cycleRepeat() },
+                    onFavorite = { if (id != null) app.appScope.launch { app.playlists.toggleFavorite(id) } },
+                    onAddToList = { if (id != null) sheets.open(Sheet.AddToPlaylist(listOf(id))) },
+                    onTimer = { sheets.open(Sheet.SleepTimer) },
                     onEqualizer = onOpenEqualizer,
-                    onQueue = { queueOpen = true },
                 )
                 Spacer(Modifier.height(8.dp))
             }
@@ -271,6 +283,7 @@ fun PlayerScreen(
                     accent = colors.accent,
                     onPlay = { player.playAt(it) },
                     onRemove = { player.removeAt(it) },
+                    onMove = { from, to -> player.moveItem(from, to) },
                     onClose = { queueOpen = false },
                 )
             }
@@ -351,6 +364,7 @@ private fun PlayerBackdrop(
 @Composable
 private fun TopBar(
     s: PlayerUiState,
+    sleepText: String?,
     onClose: () -> Unit,
     onQueue: () -> Unit,
 ) {
@@ -363,7 +377,10 @@ private fun TopBar(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text("REPRODUCIENDO", style = T.overline, color = Color.White.copy(alpha = 0.6f))
-            if (s.count > 1) Text("${s.index + 1} de ${s.count}", style = T.tiny, color = Color.White.copy(alpha = 0.6f))
+            when {
+                sleepText != null -> Text(sleepText, style = T.tiny, color = Color.White.copy(alpha = 0.85f), maxLines = 1)
+                s.count > 1 -> Text("${s.index + 1} de ${s.count}", style = T.tiny, color = Color.White.copy(alpha = 0.6f))
+            }
         }
         RoundIcon(BI.Queue, "Abrir la cola", Color.White, onQueue)
     }
@@ -550,7 +567,7 @@ private fun SwipeArtwork(
                         alpha = 1f - progress * 0.6f
                     }.shadow(24.dp, RoundedCornerShape(18.dp), ambientColor = Color.Black, spotColor = Color.Black),
             ) {
-                Thumb(state.artwork, state.album.ifBlank { state.title }, Modifier.fillMaxSize(), corner = 18.dp, icon = BI.Music)
+                Thumb(state.artwork, state.artKey, Modifier.fillMaxSize(), corner = 18.dp, icon = BI.Music)
             }
 
             val icon = flashIcon
@@ -716,10 +733,14 @@ private fun HoldButton(
 private fun SecondaryControls(
     s: PlayerUiState,
     accent: Color,
+    favorite: Boolean,
+    sleeping: Boolean,
     onShuffle: () -> Unit,
     onRepeat: () -> Unit,
+    onFavorite: () -> Unit,
+    onAddToList: () -> Unit,
+    onTimer: () -> Unit,
     onEqualizer: () -> Unit,
-    onQueue: () -> Unit,
 ) {
     Row(
         Modifier.fillMaxWidth(),
@@ -738,8 +759,10 @@ private fun SecondaryControls(
             accent,
             onRepeat,
         )
+        ToggleIcon(if (favorite) BI.HeartFill else BI.Heart, if (favorite) "Quitar de favoritas" else "Añadir a favoritas", favorite, accent, onFavorite)
+        ToggleIcon(BI.PlaylistAdd, "Añadir a una lista", false, accent, onAddToList)
+        ToggleIcon(BI.Timer, if (sleeping) "Temporizador activo" else "Temporizador", sleeping, accent, onTimer)
         ToggleIcon(BI.Sliders, "Ecualizador", false, accent, onEqualizer)
-        ToggleIcon(BI.Queue, "Cola", false, accent, onQueue)
     }
 }
 

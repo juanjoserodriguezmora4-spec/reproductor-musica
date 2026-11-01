@@ -11,7 +11,8 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.bismopower.app.data.db.TrackEntity
-import com.bismopower.app.library.trackArtUri
+import com.bismopower.app.library.artKey
+import com.bismopower.app.library.artUri
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -24,6 +25,8 @@ data class PlayerUiState(
     val artist: String = "",
     val album: String = "",
     val artwork: String? = null,
+    /** Clave del degradado cuando no hay carátula. */
+    val artKey: String = "",
     val isPlaying: Boolean = false,
     val durationMs: Long = 0,
     val shuffle: Boolean = false,
@@ -42,9 +45,11 @@ data class QueueItem(
     val artist: String,
     val album: String,
     val artwork: String?,
+    val artKey: String,
 )
 
 private const val EXTRA_ALBUM_ID = "albumId"
+private const val EXTRA_ART_KEY = "artKey"
 
 fun TrackEntity.toMediaItem(): MediaItem {
     val mediaUri = Uri.parse(uri)
@@ -54,9 +59,14 @@ fun TrackEntity.toMediaItem(): MediaItem {
             .setTitle(title)
             .setArtist(artist)
             .setAlbumTitle(album)
-            .setArtworkUri(trackArtUri(id, albumId))
+            .setArtworkUri(artUri())
             .setTrackNumber(trackNumber)
-            .setExtras(Bundle().apply { putLong(EXTRA_ALBUM_ID, albumId) })
+            .setExtras(
+                Bundle().apply {
+                    putLong(EXTRA_ALBUM_ID, albumId)
+                    putString(EXTRA_ART_KEY, artKey())
+                },
+            )
             .build()
     return MediaItem
         .Builder()
@@ -79,6 +89,7 @@ class PlayerConnection(
     var controller: MediaController? = null
         private set
     private val pending = mutableListOf<(MediaController) -> Unit>()
+    private var afterCurrent: (() -> Unit)? = null
     private val _state = MutableStateFlow(PlayerUiState())
     val state: StateFlow<PlayerUiState> = _state.asStateFlow()
     private val _queue = MutableStateFlow<List<QueueItem>>(emptyList())
@@ -94,6 +105,27 @@ class PlayerConnection(
             ) {
                 refresh()
                 if (events.contains(Player.EVENT_TIMELINE_CHANGED)) refreshQueue()
+                // Si era la última canción no hay "siguiente": el temporizador termina igual.
+                if (player.playbackState == Player.STATE_ENDED) {
+                    afterCurrent?.let {
+                        afterCurrent = null
+                        it()
+                    }
+                }
+            }
+
+            override fun onMediaItemTransition(
+                mediaItem: MediaItem?,
+                reason: Int,
+            ) {
+                // Temporizador "al terminar la canción": la siguiente empezó sola, así que se pausa.
+                val done = afterCurrent ?: return
+                if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO || reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) {
+                    afterCurrent = null
+                    controller?.pause()
+                    controller?.seekTo(0L)
+                    done()
+                }
             }
         }
 
@@ -139,6 +171,7 @@ class PlayerConnection(
                 artist = meta?.artist?.toString() ?: "",
                 album = meta?.albumTitle?.toString() ?: "",
                 artwork = meta?.artworkUri?.toString(),
+                artKey = meta?.extras?.getString(EXTRA_ART_KEY) ?: meta?.title?.toString() ?: "",
                 isPlaying = c.isPlaying,
                 durationMs = c.duration.coerceAtLeast(0),
                 shuffle = c.shuffleModeEnabled,
@@ -164,6 +197,7 @@ class PlayerConnection(
                     artist = meta.artist?.toString() ?: "",
                     album = meta.albumTitle?.toString() ?: "",
                     artwork = meta.artworkUri?.toString(),
+                    artKey = meta.extras?.getString(EXTRA_ART_KEY) ?: meta.title?.toString() ?: "",
                 )
             }
     }
@@ -187,6 +221,48 @@ class PlayerConnection(
     }
 
     fun toggle() = withController { if (it.isPlaying) it.pause() else it.play() }
+
+    fun pause() = withController { it.pause() }
+
+    /** Volumen propio del reproductor (0 a 1), aparte del volumen del teléfono. Lo usa el temporizador. */
+    fun setVolume(volume: Float) = withController { it.volume = volume.coerceIn(0f, 1f) }
+
+    /** Pausa cuando termine la canción actual y luego llama a [onDone]. Con null se cancela. */
+    fun pauseAfterCurrent(onDone: (() -> Unit)?) {
+        afterCurrent = onDone
+    }
+
+    /** Pone estas canciones justo después de la que está sonando. Si no suena nada, las reproduce. */
+    fun playNext(tracks: List<TrackEntity>) {
+        if (tracks.isEmpty()) return
+        withController { c ->
+            if (c.mediaItemCount == 0) {
+                play(tracks, 0)
+            } else {
+                c.addMediaItems(c.currentMediaItemIndex + 1, tracks.map { it.toMediaItem() })
+            }
+        }
+    }
+
+    /** Añade canciones al final de la cola. Si no suena nada, las reproduce. */
+    fun addToQueue(tracks: List<TrackEntity>) {
+        if (tracks.isEmpty()) return
+        withController { c ->
+            if (c.mediaItemCount == 0) {
+                play(tracks, 0)
+            } else {
+                c.addMediaItems(tracks.map { it.toMediaItem() })
+            }
+        }
+    }
+
+    /** Mueve una canción de la cola de [from] a [to] (los dos son posiciones en la cola). */
+    fun moveItem(
+        from: Int,
+        to: Int,
+    ) = withController {
+        if (from in 0 until it.mediaItemCount && to in 0 until it.mediaItemCount && from != to) it.moveMediaItem(from, to)
+    }
 
     fun next() = withController { it.seekToNext() }
 

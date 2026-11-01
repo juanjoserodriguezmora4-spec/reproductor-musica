@@ -30,6 +30,15 @@ app/src/main/java/com/bismopower/app/
   data/EqRepository.kt     Estado del ecualizador: lo guarda (DataStore "equalizer") y lo aplica
   ui/equalizer/            Pantalla del ecualizador (visor oscuro con curva, faders, perillas)
   ui/settings/FolderPicker Elegir carpetas de música (overlay desde Biblioteca o Ajustes)
+  ui/playlists/            Pestaña Listas: favoritas, más escuchadas, recientes y listas propias
+  ui/sheets/Sheets.kt      Hojas de acciones (menú de canción, añadir a lista, nombrar lista,
+                           menú de lista, temporizador). Se abren con LocalSheets.current.open(...)
+                           y las dibuja SheetHost al final de BismoRoot, encima de todo
+  ui/common/Reorder.kt     Reordenar arrastrando el asa ≡ (filas de alto fijo)
+  data/db/Playlists.kt     Tablas playlists, playlist_tracks, favorites, play_stats + PlaylistDao
+  library/PlaylistRepository  Listas, favoritas, conteo de reproducciones
+  player/PlayCounter       Cuenta una reproducción a los 30 s (o la mitad si es más corta)
+  player/SleepTimer        Temporizador con fundido de 20 s; también "al terminar la canción"
   data/Settings.kt         DataStore: tema, color, reducir transparencia, carpetas de música
   data/db/BismoDatabase.kt Room: TrackEntity, consultas de álbumes/artistas/carpetas
   library/                 Escaneo de MediaStore → Room (filtrado por carpetas), permiso de audio, carátulas
@@ -111,6 +120,10 @@ Reglas:
   en `BismoApp.newImageLoader`) y Media3 con `TrackArtBitmapLoader` (en `PlaybackService`).
   Motivo: las descargas de Bruma no traen álbum y Android las junta en un solo "álbum" con
   el nombre de la carpeta, así que la carátula del álbum sale vacía o repetida.
+- Por eso, para cada canción se usa `TrackEntity.artUri()` y `artKey()`: el respaldo de la
+  carátula del álbum y el degradado compartido solo aplican si `hasRealAlbum()` (el álbum no
+  es "Álbum desconocido" ni el nombre de la carpeta). `gradientFor` arma el degradado con un
+  tono sacado del nombre (HSV), así no se repite entre canciones.
 - Tema claro/oscuro según el sistema, con opción en Ajustes.
 - Tipografía Inter (la misma de Bruma) y estilos de texto en el objeto `T`.
 - Animaciones cortas (150–320 ms) con `tween`/`animateColorAsState`; nada de efectos
@@ -143,8 +156,16 @@ Reglas:
     valor normal); paneles con `glass(strong = true)` para que se lea mejor
 - Biblioteca: elegir carpetas de música (todas o solo las marcadas, con subcarpetas);
   el filtro se aplica en `LibraryRepository.scan()`
-- 2b (siguiente) Listas de reproducción (Room), favoritas, más escuchadas
-- 2c Cola: reordenar arrastrando; temporizador de apagado; búsqueda
+- 2b (hecha) Listas de reproducción, favoritas, más escuchadas y recientes:
+  - Base de datos versión 2. Las tablas del usuario NO tienen llave foránea hacia `tracks`
+    (se rellena en cada escaneo); las consultas hacen JOIN, así que una canción que ya no
+    está simplemente no aparece. Desde la v2, cualquier cambio de tablas necesita una
+    `Migration` (solo la v1 se borra sola: `fallbackToDestructiveMigrationFrom(true, 1)`)
+  - Sin "INSERT ... ON CONFLICT DO UPDATE": el SQLite de Android 8 no lo soporta
+  - Menú ⋯ en cada canción: reproducir después, añadir a la cola, favorita, añadir a lista
+  - En el reproductor: corazón, añadir a lista y temporizador en la fila de abajo
+- 2c (hecha) Cola reordenable (asa ≡), temporizador para dormir y búsqueda en la
+  Biblioteca (sin tildes, varias palabras a la vez: canciones, artistas y álbumes)
 - Pendiente del ecualizador: presets propios con nombre, onda real en el reproductor
 
 ## Compilar

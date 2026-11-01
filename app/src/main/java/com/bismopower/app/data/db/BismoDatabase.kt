@@ -121,15 +121,30 @@ interface TrackDao {
     suspend fun deleteIds(ids: List<Long>)
 }
 
-@Database(entities = [TrackEntity::class], version = 1, exportSchema = false)
+@Database(
+    entities = [
+        TrackEntity::class,
+        PlaylistEntity::class,
+        PlaylistTrackEntity::class,
+        FavoriteEntity::class,
+        PlayStatEntity::class,
+    ],
+    version = 2,
+    exportSchema = false,
+)
 abstract class BismoDatabase : RoomDatabase() {
     abstract fun tracks(): TrackDao
+
+    abstract fun playlists(): PlaylistDao
 
     companion object {
         fun build(context: Context): BismoDatabase =
             Room
                 .databaseBuilder(context, BismoDatabase::class.java, "bismo.db")
-                .fallbackToDestructiveMigration(dropAllTables = true)
+                // La versión 1 solo guardaba la biblioteca escaneada (se vuelve a armar sola).
+                // Desde la 2 hay listas y favoritas del usuario: cualquier cambio futuro en las
+                // tablas necesita una Migration de verdad para no borrarlas.
+                .fallbackToDestructiveMigrationFrom(dropAllTables = true, 1)
                 .build()
     }
 }

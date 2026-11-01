@@ -11,8 +11,10 @@ import com.bismopower.app.data.EqRepository
 import com.bismopower.app.data.SettingsRepository
 import com.bismopower.app.data.db.BismoDatabase
 import com.bismopower.app.library.LibraryRepository
+import com.bismopower.app.library.PlaylistRepository
 import com.bismopower.app.library.TrackArtFetcher
 import com.bismopower.app.player.PlayerConnection
+import com.bismopower.app.player.SleepTimer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -47,6 +49,12 @@ class AppContainer(
     val settings = SettingsRepository(app)
     val library = LibraryRepository(app, db, settings)
     val player = PlayerConnection(app)
+
+    /** Listas de reproducción, favoritas y lo más escuchado. */
+    val playlists = PlaylistRepository(db)
+
+    /** Temporizador para dormir. */
+    val sleepTimer = SleepTimer(appScope, player)
 
     /** Cadena de efectos de audio que usa ExoPlayer (el ecualizador vive aquí). */
     val audioEffects = AudioEffects()
