@@ -304,7 +304,14 @@ private fun SongsSection(
     tracks: List<TrackEntity>,
     header: @Composable () -> Unit,
 ) {
-    val current by LocalContext.current.container.player.state.collectAsStateWithLifecycle()
+    val app = LocalContext.current.container
+    val scope = rememberCoroutineScope()
+    val current by app.player.state.collectAsStateWithLifecycle()
+    val settings by app.settings.flow.collectAsState(initial = null)
+    val sort = SongSort.of(settings?.songSort ?: "TITLE")
+    val seed = settings?.shuffleSeed ?: 0L
+    // La lista en el orden elegido: tocar una canción o "Reproducir" sigue este mismo orden.
+    val sorted = remember(tracks, sort, seed) { tracks.sortedFor(sort, seed) }
     LazyColumn(
         Modifier
             .fillMaxSize()
@@ -312,8 +319,19 @@ private fun SongsSection(
         contentPadding = listPadding,
     ) {
         item(key = "header") { header() }
-        item(key = "actions") { PlayButtons(tracks, Modifier.padding(vertical = 14.dp)) }
-        trackItems(tracks, current.currentId)
+        item(key = "actions") {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                // Siempre en orden (sin el modo aleatorio del reproductor): primero la 1, luego la 2…
+                PrimaryButton("Reproducir", { app.player.play(sorted, 0) }, Modifier.weight(1f), icon = BI.Play)
+                SortButton(sort, onPick = { scope.launch { app.settings.setSongSort(it.id) } })
+            }
+        }
+        trackItems(sorted, current.currentId)
     }
 }
 

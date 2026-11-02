@@ -28,6 +28,14 @@ data class AppSettings(
     val crossfadeSec: Int = 0,
     /** Carpeta elegida por el usuario donde guarda sus archivos .lrc (dirección de Android). */
     val lyricsFolder: String? = null,
+    /** Orden de la lista de Canciones: TITLE, ARTIST, ALBUM, DATE, DURATION o SHUFFLE. */
+    val songSort: String = "TITLE",
+    /** Semilla de la mezcla: la lista mezclada queda igual hasta que pidas mezclar otra vez. */
+    val shuffleSeed: Long = 0,
+    /** Qué se ve en el centro del reproductor: COVER, LYRICS o VIZ (visualizador). */
+    val playerView: String = "COVER",
+    val vizStyle: String = "RING",
+    val vizPalette: String = "ARTWORK",
 )
 
 class SettingsRepository(
@@ -42,6 +50,11 @@ class SettingsRepository(
         val MUSIC_FOLDERS = stringSetPreferencesKey("music_folders")
         val CROSSFADE_SEC = intPreferencesKey("crossfade_sec")
         val LYRICS_FOLDER = stringPreferencesKey("lyrics_folder")
+        val SONG_SORT = stringPreferencesKey("song_sort")
+        val SHUFFLE_SEED = longPreferencesKey("shuffle_seed")
+        val PLAYER_VIEW = stringPreferencesKey("player_view")
+        val VIZ_STYLE = stringPreferencesKey("viz_style")
+        val VIZ_PALETTE = stringPreferencesKey("viz_palette")
     }
 
     val flow: Flow<AppSettings> =
@@ -56,6 +69,11 @@ class SettingsRepository(
                 musicFolders = p[MUSIC_FOLDERS] ?: d.musicFolders,
                 crossfadeSec = p[CROSSFADE_SEC] ?: d.crossfadeSec,
                 lyricsFolder = p[LYRICS_FOLDER]?.takeIf { it.isNotBlank() },
+                songSort = p[SONG_SORT] ?: d.songSort,
+                shuffleSeed = p[SHUFFLE_SEED] ?: d.shuffleSeed,
+                playerView = p[PLAYER_VIEW] ?: d.playerView,
+                vizStyle = p[VIZ_STYLE] ?: d.vizStyle,
+                vizPalette = p[VIZ_PALETTE] ?: d.vizPalette,
             )
         }
 
@@ -69,6 +87,14 @@ class SettingsRepository(
         context.dataStore.edit {
             it[ONLY_CHOSEN_FOLDERS] = onlyChosen
             it[MUSIC_FOLDERS] = folders
+        }
+    }
+
+    /** Cambia el orden de Canciones. Al elegir "Aleatorio" se hace una mezcla nueva. */
+    suspend fun setSongSort(sort: String) {
+        context.dataStore.edit {
+            it[SONG_SORT] = sort
+            if (sort == "SHUFFLE") it[SHUFFLE_SEED] = System.nanoTime()
         }
     }
 

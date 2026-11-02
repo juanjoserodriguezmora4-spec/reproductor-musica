@@ -28,13 +28,19 @@ class AudioEffects {
     @Volatile private var settings = EqSettings()
     private val equalizers = CopyOnWriteArrayList<WeakReference<ParametricEq>>()
 
-    /** Efectos nuevos para un reproductor, en el orden en que se procesa el audio. */
-    fun newProcessors(): Array<AudioProcessor> {
+    /** Copia del audio para el visualizador (solo la llena el reproductor principal). */
+    val analyzer = AudioAnalyzer()
+
+    /**
+     * Efectos nuevos para un reproductor, en el orden en que se procesa el audio.
+     * [analyze] = false para el reproductor del fundido, así el visualizador no mezcla dos canciones.
+     */
+    fun newProcessors(analyze: Boolean = true): Array<AudioProcessor> {
         val eq = ParametricEq()
         eq.update(settings)
         equalizers.removeIf { it.get() == null }
         equalizers += WeakReference(eq)
-        return arrayOf(eq)
+        return if (analyze) arrayOf(eq, AnalyzerTap(analyzer)) else arrayOf(eq)
     }
 
     fun update(newSettings: EqSettings) {
@@ -218,6 +224,7 @@ class ParametricEq : BaseAudioProcessor() {
 class BismoRenderersFactory(
     context: Context,
     private val effects: AudioEffects,
+    private val analyze: Boolean = true,
 ) : DefaultRenderersFactory(context) {
     override fun buildAudioSink(
         context: Context,
@@ -227,6 +234,6 @@ class BismoRenderersFactory(
         DefaultAudioSink
             .Builder(context)
             .setEnableFloatOutput(enableFloatOutput)
-            .setAudioProcessors(effects.newProcessors())
+            .setAudioProcessors(effects.newProcessors(analyze))
             .build()
 }

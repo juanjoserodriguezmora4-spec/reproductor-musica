@@ -44,6 +44,9 @@ app/src/main/java/com/bismopower/app/
   library/LyricsRepository Busca la letra: .lrc al lado → carpeta de letras (SAF) → incluida
   ui/player/LyricsView     Letra en el lugar de la carátula; la línea actual se ilumina
   widget/                  Widget 4×1 (RemoteViews): PlayerWidget, WidgetUpdater, WidgetSync
+  audio/AudioAnalyzer.kt   Copia en mono del audio (AnalyzerTap, después del ecualizador) para el visualizador
+  ui/player/visualizer/    Spectrum (FFT 2048, 64 bandas), VizStyles (7 estilos + paletas), VisualizerView
+  ui/library/SongSort.kt   Orden de Canciones (nombre, artista, álbum, recientes, duración, mezclada)
   data/Settings.kt         DataStore: tema, color, reducir transparencia, carpetas de música
   data/db/BismoDatabase.kt Room: TrackEntity, consultas de álbumes/artistas/carpetas
   library/                 Escaneo de MediaStore → Room (filtrado por carpetas), permiso de audio, carátulas
@@ -194,6 +197,20 @@ Reglas:
   escaneo automático al abrir)
 - Ícono nuevo: corchea grande de vidrio (blanca translúcida, un solo trazado) sobre fondo
   rojo desvanecido (#B3122E → #E5384F → #FF9AA8 con brillo blanco arriba)
+
+**Orden y visualizador**
+- Canciones: el botón "Aleatorio" se cambió por un menú (`SortButton`). "Mezclar la lista"
+  reordena la lista misma con una semilla guardada (`shuffleSeed`), y "Reproducir" la toca
+  en ese orden con el modo aleatorio del reproductor apagado. Las demás listas siguen igual
+- Visualizador sin permiso de micrófono: `AnalyzerTap` copia el audio dentro de ExoPlayer.
+  El audio suena ~280 ms después de procesarse (`AudioAnalyzer.LATENCY_MS`); `Spectrum`
+  mueve un "cabezal" a ritmo real y lo corrige hacia ese punto para que se vea suave.
+  El reproductor del fundido no alimenta el analizador (`newProcessors(analyze = false)`)
+- Estilos: Anillo, Halo, Línea, Barras, LED, Pulso, Cordillera. Paletas: Carátula, Neón,
+  Lavanda, Fuego, Aurora, Hielo, Atardecer, Blanco. Se guardan en Ajustes (`vizStyle`,
+  `vizPalette`) igual que la vista del centro del reproductor (`playerView`: COVER/LYRICS/VIZ)
+- En el visualizador: deslizar a los lados cambia de estilo, un toque pausa, el botón de la
+  esquina abre `Sheet.Visualizer` (miniaturas dibujadas con `PreviewFrame`)
 
 **Ideas para después**
 - Reanudar la última cola al abrir (onPlaybackResumption) y que el widget pueda arrancarla

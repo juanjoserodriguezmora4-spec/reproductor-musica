@@ -56,7 +56,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -88,11 +87,15 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.Player
 import coil.compose.AsyncImage
 import com.bismopower.app.container
+import com.bismopower.app.data.SettingsRepository
 import com.bismopower.app.player.PlayerConnection
 import com.bismopower.app.player.PlayerUiState
 import com.bismopower.app.ui.common.BI
 import com.bismopower.app.ui.common.Thumb
 import com.bismopower.app.ui.common.fmtDuration
+import com.bismopower.app.ui.player.visualizer.VisualizerView
+import com.bismopower.app.ui.player.visualizer.VizPalette
+import com.bismopower.app.ui.player.visualizer.VizStyle
 import com.bismopower.app.ui.sheets.LocalSheets
 import com.bismopower.app.ui.sheets.Sheet
 import com.bismopower.app.ui.sheets.sleepLabel
@@ -138,13 +141,20 @@ fun PlayerScreen(
     val density = LocalDensity.current
     val colors = rememberPlayerColors(s.artwork, s.artKey)
     var queueOpen by remember { mutableStateOf(false) }
-    var showLyrics by rememberSaveable { mutableStateOf(false) }
+    // Qué se ve en el centro (carátula, letra o visualizador). Se guarda para la próxima vez.
+    val appSettings by app.settings.flow.collectAsStateWithLifecycle(initialValue = null)
+    val view = appSettings?.playerView ?: "COVER"
+    val vizStyle = VizStyle.of(appSettings?.vizStyle ?: "")
+    val vizColors = VizPalette.of(appSettings?.vizPalette ?: "").colors(colors.accent)
+    fun setView(mode: String) {
+        app.appScope.launch { app.settings.set(SettingsRepository.PLAYER_VIEW, mode) }
+    }
 
     // Íconos claros en la barra de estado mientras el reproductor está abierto.
-    val view = LocalView.current
+    val androidView = LocalView.current
     DisposableEffect(appDark) {
-        val window = (view.context as? Activity)?.window
-        val ctrl = window?.let { WindowCompat.getInsetsController(it, view) }
+        val window = (androidView.context as? Activity)?.window
+        val ctrl = window?.let { WindowCompat.getInsetsController(it, androidView) }
         ctrl?.isAppearanceLightStatusBars = false
         ctrl?.isAppearanceLightNavigationBars = false
         onDispose {
@@ -202,10 +212,12 @@ fun PlayerScreen(
                 TopBar(
                     s,
                     sleepLabel(sleep),
-                    lyricsOn = showLyrics,
+                    lyricsOn = view == "LYRICS",
+                    vizOn = view == "VIZ",
                     accent = colors.accent,
                     onClose = onClose,
-                    onLyrics = { showLyrics = !showLyrics },
+                    onViz = { setView(if (view == "VIZ") "COVER" else "VIZ") },
+                    onLyrics = { setView(if (view == "LYRICS") "COVER" else "LYRICS") },
                     onQueue = { queueOpen = true },
                 )
 
@@ -219,17 +231,29 @@ fun PlayerScreen(
                 }
 
                 Spacer(Modifier.weight(0.5f))
-                // La carátula o la letra, en el mismo espacio.
+                // La carátula, la letra o el visualizador, en el mismo espacio.
                 Crossfade(
-                    showLyrics,
+                    view,
                     animationSpec = tween(260),
-                    label = "lyrics",
+                    label = "center",
                     modifier =
                         Modifier
                             .weight(6f)
                             .fillMaxWidth(),
-                ) { lyrics ->
-                    if (lyrics) {
+                ) { mode ->
+                    if (mode == "VIZ") {
+                        VisualizerView(
+                            artwork = s.artwork,
+                            artKey = s.artKey,
+                            isPlaying = s.isPlaying,
+                            style = vizStyle,
+                            colors = vizColors,
+                            onStyle = { st -> app.appScope.launch { app.settings.set(SettingsRepository.VIZ_STYLE, st.id) } },
+                            onTap = { player.toggle() },
+                            onOpenSettings = { sheets.open(Sheet.Visualizer(colors.accent)) },
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    } else if (mode == "LYRICS") {
                         LyricsView(
                             trackId = s.currentId,
                             positionMs = position,
@@ -401,20 +425,24 @@ private fun TopBar(
     s: PlayerUiState,
     sleepText: String?,
     lyricsOn: Boolean,
+    vizOn: Boolean,
     accent: Color,
     onClose: () -> Unit,
+    onViz: () -> Unit,
     onLyrics: () -> Unit,
     onQueue: () -> Unit,
 ) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         RoundIcon(BI.Down, "Cerrar reproductor", Color.White, onClose)
+        Spacer(Modifier.width(8.dp))
+        RoundIcon(BI.Wave, if (vizOn) "Ver la carátula" else "Ver el visualizador", if (vizOn) accent else Color.White, onViz)
         Column(
             Modifier
                 .weight(1f)
-                .padding(horizontal = 12.dp),
+                .padding(horizontal = 4.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text("REPRODUCIENDO", style = T.overline, color = Color.White.copy(alpha = 0.6f))
+            Text("SONANDO", style = T.overline, color = Color.White.copy(alpha = 0.6f), maxLines = 1)
             when {
                 sleepText != null -> Text(sleepText, style = T.tiny, color = Color.White.copy(alpha = 0.85f), maxLines = 1)
                 s.count > 1 -> Text("${s.index + 1} de ${s.count}", style = T.tiny, color = Color.White.copy(alpha = 0.6f))

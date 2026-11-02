@@ -12,7 +12,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -21,16 +23,18 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -55,6 +59,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -67,6 +72,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bismopower.app.container
+import com.bismopower.app.data.SettingsRepository
 import com.bismopower.app.data.db.TrackEntity
 import com.bismopower.app.library.artKey
 import com.bismopower.app.library.artUri
@@ -78,6 +84,11 @@ import com.bismopower.app.ui.common.PrimaryButton
 import com.bismopower.app.ui.common.Thumb
 import com.bismopower.app.ui.common.glass
 import com.bismopower.app.ui.common.plural
+import com.bismopower.app.ui.player.visualizer.CoverMode
+import com.bismopower.app.ui.player.visualizer.PreviewFrame
+import com.bismopower.app.ui.player.visualizer.VizPalette
+import com.bismopower.app.ui.player.visualizer.VizStyle
+import com.bismopower.app.ui.player.visualizer.drawViz
 import com.bismopower.app.ui.theme.LocalBismo
 import com.bismopower.app.ui.theme.T
 import kotlinx.coroutines.delay
@@ -108,6 +119,11 @@ sealed interface Sheet {
     ) : Sheet
 
     data object SleepTimer : Sheet
+
+    /** Estilo y color del visualizador. [accent] es el color de la canción (para la paleta "Carátula"). */
+    data class Visualizer(
+        val accent: Color,
+    ) : Sheet
 }
 
 @Stable
@@ -189,6 +205,7 @@ fun SheetHost(controller: SheetController) {
                             is Sheet.NamePlaylist -> NamePlaylist(sheet, controller)
                             is Sheet.PlaylistMenu -> PlaylistMenu(sheet, controller)
                             Sheet.SleepTimer -> SleepTimerSheet(controller)
+                            is Sheet.Visualizer -> VisualizerSheet(sheet)
                             null -> Unit
                         }
                     }
@@ -406,6 +423,92 @@ private fun ColumnScope.PlaylistMenu(
                         contentAlignment = Alignment.Center,
                     ) { Text("Eliminar", style = T.label, color = Color.White) }
                 }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------- visualizador
+
+@Composable
+private fun ColumnScope.VisualizerSheet(sheet: Sheet.Visualizer) {
+    val c = LocalBismo.current
+    val app = LocalContext.current.container
+    val settings by app.settings.flow.collectAsState(initial = null)
+    val style = VizStyle.of(settings?.vizStyle ?: "")
+    val palette = VizPalette.of(settings?.vizPalette ?: "")
+    val colors = palette.colors(sheet.accent)
+
+    SheetTitle("Visualizador")
+    Text(
+        "También puedes cambiar de estilo deslizando el visualizador a los lados.",
+        style = T.small,
+        color = c.muted,
+        modifier = Modifier.padding(start = 6.dp, bottom = 10.dp),
+    )
+    // Miniaturas de cada estilo, dibujadas con el mismo código del visualizador.
+    VizStyle.entries.chunked(4).forEach { row ->
+        Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            row.forEach { s ->
+                val on = s == style
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .clip(Corners.button)
+                        .clickable { app.appScope.launch { app.settings.set(SettingsRepository.VIZ_STYLE, s.id) } },
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Canvas(
+                        Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(1f)
+                            .clip(Corners.button)
+                            .background(Color(0xFF0B0F1A))
+                            .border(if (on) 2.dp else 0.dp, if (on) c.accent else Color.Transparent, Corners.button)
+                            .padding(6.dp),
+                    ) {
+                        val side = kotlin.math.min(size.width, size.height)
+                        when (s.cover) {
+                            CoverMode.CIRCLE -> drawCircle(Color(0xFF2A3145), radius = side * s.coverSize / 2f)
+                            CoverMode.SQUARE ->
+                                drawRoundRect(
+                                    Color(0xFF2A3145),
+                                    topLeft = androidx.compose.ui.geometry.Offset(center.x - side / 2f, center.y - side / 2f),
+                                    size = androidx.compose.ui.geometry.Size(side, side),
+                                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(8.dp.toPx()),
+                                )
+                            CoverMode.NONE -> Unit
+                        }
+                        drawViz(s, PreviewFrame, colors, 0f)
+                    }
+                    Text(s.label, style = T.tiny, color = if (on) c.accent else c.text, modifier = Modifier.padding(vertical = 4.dp))
+                }
+            }
+            repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
+        }
+    }
+    Text("Color", style = T.title, color = c.text, modifier = Modifier.padding(start = 6.dp, top = 6.dp, bottom = 8.dp))
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        items(VizPalette.entries, key = { it.id }) { p ->
+            val on = p == palette
+            Column(
+                Modifier
+                    .width(58.dp)
+                    .clip(Corners.button)
+                    .clickable { app.appScope.launch { app.settings.set(SettingsRepository.VIZ_PALETTE, p.id) } }
+                    .padding(vertical = 4.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Box(
+                    Modifier
+                        .size(44.dp)
+                        .border(2.5.dp, if (on) c.accent else Color.Transparent, CircleShape)
+                        .padding(5.dp)
+                        .clip(CircleShape)
+                        .background(Brush.linearGradient(p.colors(sheet.accent))),
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(p.label, style = T.tiny, color = if (on) c.text else c.muted, maxLines = 1)
             }
         }
     }

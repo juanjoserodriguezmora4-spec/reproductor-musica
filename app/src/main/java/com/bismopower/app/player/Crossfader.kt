@@ -122,7 +122,7 @@ class Crossfader(
         val item = main.getMediaItemAt(index)
         val p =
             ExoPlayer
-                .Builder(context, BismoRenderersFactory(context, effects))
+                .Builder(context, BismoRenderersFactory(context, effects, analyze = false))
                 .setAudioAttributes(
                     AudioAttributes
                         .Builder()
