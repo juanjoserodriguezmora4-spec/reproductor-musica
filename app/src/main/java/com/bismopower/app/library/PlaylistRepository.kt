@@ -60,6 +60,12 @@ class PlaylistRepository(
             true
         }
 
+    /** Marca varias como favoritas (las que ya lo eran se quedan igual). */
+    suspend fun addFavorites(trackIds: List<Long>) {
+        val now = System.currentTimeMillis()
+        trackIds.distinct().forEachIndexed { i, id -> dao.addFavorite(FavoriteEntity(id, now + i)) }
+    }
+
     // ---------- Reproducciones ----------
 
     val mostPlayed: Flow<List<PlayedTrack>> = dao.mostPlayed(100)

@@ -38,20 +38,30 @@ import com.bismopower.app.container
 import com.bismopower.app.ui.common.BottomNav
 import com.bismopower.app.ui.common.GlassBackground
 import com.bismopower.app.ui.common.LocalHaze
+import com.bismopower.app.ui.common.LocalSelection
 import com.bismopower.app.ui.common.MiniPlayerBar
+import com.bismopower.app.ui.common.SelectionBar
+import com.bismopower.app.ui.common.SelectionState
+import com.bismopower.app.ui.common.plural
 import com.bismopower.app.ui.equalizer.EqualizerScreen
 import com.bismopower.app.ui.library.LibraryScreen
 import com.bismopower.app.ui.player.PlayerScreen
 import com.bismopower.app.ui.playlists.PlaylistsScreen
+import com.bismopower.app.ui.settings.DuplicatesScreen
 import com.bismopower.app.ui.settings.FolderPickerScreen
+import com.bismopower.app.ui.settings.SettingsScreen
+import com.bismopower.app.ui.sheets.LocalDeleter
 import com.bismopower.app.ui.sheets.LocalSheets
+import com.bismopower.app.ui.sheets.Sheet
 import com.bismopower.app.ui.sheets.SheetController
 import com.bismopower.app.ui.sheets.SheetHost
-import com.bismopower.app.ui.settings.SettingsScreen
+import com.bismopower.app.ui.sheets.rememberTrackDeleter
+import com.bismopower.app.ui.sheets.toast
 import com.bismopower.app.ui.theme.LocalBismo
 import com.bismopower.app.ui.theme.LocalSolid
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
+import kotlinx.coroutines.launch
 
 @Composable
 fun BismoRoot(
@@ -67,6 +77,12 @@ fun BismoRoot(
     val solid = LocalSolid.current
     val haze = rememberHazeState(blurEnabled = !solid)
     val sheets = remember { SheetController() }
+    val selection = remember { SelectionState() }
+    val deleter = rememberTrackDeleter(sheets)
+    var duplicatesOpen by rememberSaveable { mutableStateOf(false) }
+    val context = LocalContext.current
+    // Al cambiar de pestaña se suelta la selección.
+    LaunchedEffect(tab) { selection.clear() }
 
     LaunchedEffect(Unit) { app.player.connect() }
     LaunchedEffect(startRoute) {
@@ -74,9 +90,15 @@ fun BismoRoot(
         if (startRoute != null) onRouteConsumed()
     }
     BackHandler(enabled = foldersOpen && !sheetOpen) { foldersOpen = false }
+    BackHandler(enabled = duplicatesOpen && !sheetOpen) { duplicatesOpen = false }
     BackHandler(enabled = sheetOpen) { sheetOpen = false }
 
-    CompositionLocalProvider(LocalHaze provides haze, LocalSheets provides sheets) {
+    CompositionLocalProvider(
+        LocalHaze provides haze,
+        LocalSheets provides sheets,
+        LocalSelection provides selection,
+        LocalDeleter provides deleter,
+    ) {
         Box(Modifier.fillMaxSize()) {
             // Capa 1 y contenido: lo que las barras de vidrio desenfocan al pasar por encima.
             GlassBackground(Modifier.hazeSource(haze), seed = tab) {
@@ -86,7 +108,11 @@ fun BismoRoot(
                             0 -> LibraryScreen(onOpenFolders = { foldersOpen = true })
                             1 -> PlaylistsScreen()
                             2 -> EqualizerScreen()
-                            else -> SettingsScreen(onOpenFolders = { foldersOpen = true })
+                            else ->
+                                SettingsScreen(
+                                    onOpenFolders = { foldersOpen = true },
+                                    onOpenDuplicates = { duplicatesOpen = true },
+                                )
                         }
                     }
                 }
@@ -107,14 +133,49 @@ fun BismoRoot(
                     ).padding(top = if (solid) 28.dp else 0.dp)
                     .navigationBarsPadding(),
             ) {
-                AnimatedVisibility(
-                    visible = player.currentId != null,
-                    enter = fadeIn() + slideInVertically { it / 2 },
-                    exit = fadeOut(),
-                ) {
-                    MiniPlayerBar(player, app.player) { sheetOpen = true }
+                if (selection.active) {
+                    // Mientras hay canciones marcadas, "atrás" quita la selección.
+                    BackHandler { selection.clear() }
+                    SelectionBar(
+                        selection,
+                        onPlay = {
+                            app.player.play(selection.inOrder(), 0)
+                            selection.clear()
+                        },
+                        onPlayNext = {
+                            app.player.playNext(selection.inOrder())
+                            context.toast("Sonarán después de la actual")
+                            selection.clear()
+                        },
+                        onQueue = {
+                            val added = app.player.addToQueue(selection.inOrder())
+                            context.toast(if (added == 0) "Ya estaban en la cola" else plural(added, "añadida a la cola", "añadidas a la cola"))
+                            selection.clear()
+                        },
+                        onAddToList = {
+                            sheets.open(Sheet.AddToPlaylist(selection.inOrder().map { it.id }))
+                            selection.clear()
+                        },
+                        onFavorite = {
+                            val ids = selection.inOrder().map { it.id }
+                            app.appScope.launch { app.playlists.addFavorites(ids) }
+                            context.toast("Añadidas a favoritas")
+                            selection.clear()
+                        },
+                        onDelete = {
+                            deleter.request(selection.inOrder()) { selection.clear() }
+                        },
+                    )
+                } else {
+                    AnimatedVisibility(
+                        visible = player.currentId != null,
+                        enter = fadeIn() + slideInVertically { it / 2 },
+                        exit = fadeOut(),
+                    ) {
+                        MiniPlayerBar(player, app.player) { sheetOpen = true }
+                    }
+                    BottomNav(tab) { tab = it }
                 }
-                BottomNav(tab) { tab = it }
             }
 
             // Elegir carpetas de música: entra desde la derecha, por encima de las pestañas.
@@ -124,6 +185,15 @@ fun BismoRoot(
                 exit = slideOutHorizontally(tween(220)) { it } + fadeOut(tween(200)),
             ) {
                 FolderPickerScreen(onClose = { foldersOpen = false })
+            }
+
+            // Canciones repetidas: igual que las carpetas, entra desde la derecha.
+            AnimatedVisibility(
+                visible = duplicatesOpen,
+                enter = slideInHorizontally(tween(260)) { it } + fadeIn(tween(200)),
+                exit = slideOutHorizontally(tween(220)) { it } + fadeOut(tween(200)),
+            ) {
+                DuplicatesScreen(onClose = { duplicatesOpen = false })
             }
 
             // Reproductor a pantalla completa: sube desde el mini reproductor con un rebote suave.

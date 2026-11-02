@@ -212,6 +212,22 @@ Reglas:
 - En el visualizador: deslizar a los lados cambia de estilo, un toque pausa, el botón de la
   esquina abre `Sheet.Visualizer` (miniaturas dibujadas con `PreviewFrame`)
 
+**Borrar, seleccionar y repetidas**
+- Borrar del teléfono (`ui/sheets/TrackDeleter.kt`, `LocalDeleter`): Android 11+ usa
+  `MediaStore.createTrashRequest` (un solo aviso del sistema, papelera ~30 días, sin permiso);
+  Android 8-10 confirma con `Sheet.ConfirmDelete` y borra con WRITE_EXTERNAL_STORAGE
+  (maxSdk 29, `requestLegacyExternalStorage`). Al terminar: `library.forget(ids)` (tracks,
+  listas, favoritas, conteos) y `player.removeIds`
+- Selección múltiple (`ui/common/Selection.kt`, `LocalSelection`): mantener presionada una
+  canción en Biblioteca (Canciones, álbum/artista/carpeta, búsqueda). Mientras hay marcadas,
+  `SelectionBar` reemplaza al mini reproductor y a las pestañas; "atrás" la suelta. Cada
+  pantalla pone su lista en `selection.visible` (para "Todas" y el orden)
+- Repetidas (`library/Duplicates.kt`): mismo título (sin "(1)", "- copia"...) y artista,
+  sin tildes, y duración ±2,5 s. Se queda el archivo más pesado. Con "Ocultar canciones
+  repetidas" (por defecto encendido) el escaneo guarda solo una copia; la pantalla
+  `DuplicatesScreen` deja borrar las demás. La cola tampoco repite: `addToQueue` salta las
+  que ya están y `playNext` mueve la canción si ya estaba
+
 **Ideas para después**
 - Reanudar la última cola al abrir (onPlaybackResumption) y que el widget pueda arrancarla
 - Motor nativo (C++/Oboe), onda real en el reproductor, presets propios del ecualizador

@@ -235,28 +235,69 @@ class PlayerConnection(
         afterCurrent = onDone
     }
 
-    /** Pone estas canciones justo después de la que está sonando. Si no suena nada, las reproduce. */
+    /**
+     * Pone estas canciones justo después de la que está sonando. Si alguna ya estaba en la cola,
+     * se mueve en vez de repetirse. Si no suena nada, las reproduce.
+     */
     fun playNext(tracks: List<TrackEntity>) {
-        if (tracks.isEmpty()) return
+        val list = tracks.distinctBy { it.id }
+        if (list.isEmpty()) return
         withController { c ->
             if (c.mediaItemCount == 0) {
-                play(tracks, 0)
-            } else {
-                c.addMediaItems(c.currentMediaItemIndex + 1, tracks.map { it.toMediaItem() })
+                play(list, 0)
+                return@withController
+            }
+            var insertAt = c.currentMediaItemIndex + 1
+            for (t in list) {
+                val existing = indexOf(c, t.id)
+                when {
+                    existing == c.currentMediaItemIndex -> Unit // ya está sonando
+                    existing >= 0 -> {
+                        val target = if (existing < insertAt) insertAt - 1 else insertAt
+                        c.moveMediaItem(existing, target)
+                        insertAt = target + 1
+                    }
+                    else -> {
+                        c.addMediaItem(insertAt, t.toMediaItem())
+                        insertAt++
+                    }
+                }
             }
         }
     }
 
-    /** Añade canciones al final de la cola. Si no suena nada, las reproduce. */
-    fun addToQueue(tracks: List<TrackEntity>) {
-        if (tracks.isEmpty()) return
+    /**
+     * Añade canciones al final de la cola, sin repetir las que ya están.
+     * Devuelve cuántas se añadieron (0 = ya estaban todas). Si no suena nada, las reproduce.
+     */
+    fun addToQueue(tracks: List<TrackEntity>): Int {
+        val inQueue = _queue.value.mapNotNull { it.id }.toHashSet()
+        val fresh = tracks.distinctBy { it.id }.filter { it.id !in inQueue }
+        if (fresh.isEmpty()) return 0
         withController { c ->
             if (c.mediaItemCount == 0) {
-                play(tracks, 0)
+                play(fresh, 0)
             } else {
-                c.addMediaItems(tracks.map { it.toMediaItem() })
+                c.addMediaItems(fresh.map { it.toMediaItem() })
             }
         }
+        return fresh.size
+    }
+
+    /** Quita de la cola estas canciones (por ejemplo, porque se borraron del teléfono). */
+    fun removeIds(ids: Set<Long>) =
+        withController { c ->
+            for (i in c.mediaItemCount - 1 downTo 0) {
+                if (c.getMediaItemAt(i).mediaId.toLongOrNull() in ids) c.removeMediaItem(i)
+            }
+        }
+
+    private fun indexOf(
+        c: MediaController,
+        trackId: Long,
+    ): Int {
+        for (i in 0 until c.mediaItemCount) if (c.getMediaItemAt(i).mediaId.toLongOrNull() == trackId) return i
+        return -1
     }
 
     /** Mueve una canción de la cola de [from] a [to] (los dos son posiciones en la cola). */

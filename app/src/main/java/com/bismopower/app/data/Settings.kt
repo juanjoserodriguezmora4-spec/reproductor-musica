@@ -36,6 +36,8 @@ data class AppSettings(
     val playerView: String = "COVER",
     val vizStyle: String = "RING",
     val vizPalette: String = "ARTWORK",
+    /** Si hay varias copias de la misma canción, la biblioteca muestra solo una. */
+    val hideDuplicates: Boolean = true,
 )
 
 class SettingsRepository(
@@ -55,6 +57,7 @@ class SettingsRepository(
         val PLAYER_VIEW = stringPreferencesKey("player_view")
         val VIZ_STYLE = stringPreferencesKey("viz_style")
         val VIZ_PALETTE = stringPreferencesKey("viz_palette")
+        val HIDE_DUPLICATES = booleanPreferencesKey("hide_duplicates")
     }
 
     val flow: Flow<AppSettings> =
@@ -74,6 +77,7 @@ class SettingsRepository(
                 playerView = p[PLAYER_VIEW] ?: d.playerView,
                 vizStyle = p[VIZ_STYLE] ?: d.vizStyle,
                 vizPalette = p[VIZ_PALETTE] ?: d.vizPalette,
+                hideDuplicates = p[HIDE_DUPLICATES] ?: d.hideDuplicates,
             )
         }
 

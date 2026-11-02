@@ -40,6 +40,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -55,7 +56,9 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -74,8 +77,10 @@ import com.bismopower.app.ui.common.Corners
 import com.bismopower.app.ui.common.EmptyState
 import com.bismopower.app.ui.common.IconChip
 import com.bismopower.app.ui.common.ListRow
+import com.bismopower.app.ui.common.LocalSelection
 import com.bismopower.app.ui.common.PrimaryButton
 import com.bismopower.app.ui.common.Segmented
+import com.bismopower.app.ui.common.SelectCircle
 import com.bismopower.app.ui.common.Thumb
 import com.bismopower.app.ui.common.fmtDuration
 import com.bismopower.app.ui.common.glass
@@ -122,6 +127,9 @@ fun LibraryScreen(onOpenFolders: () -> Unit = {}) {
     var detail by remember { mutableStateOf<Detail?>(null) }
     var searching by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
+    val selection = LocalSelection.current
+    // Al cambiar de lista, la selección empieza de cero.
+    LaunchedEffect(detail, searching, section) { selection.clear() }
 
     LaunchedEffect(permission.granted) {
         if (permission.granted) app.library.scanOnce()
@@ -312,6 +320,8 @@ private fun SongsSection(
     val seed = settings?.shuffleSeed ?: 0L
     // La lista en el orden elegido: tocar una canción o "Reproducir" sigue este mismo orden.
     val sorted = remember(tracks, sort, seed) { tracks.sortedFor(sort, seed) }
+    val selection = LocalSelection.current
+    SideEffect { selection.visible = sorted }
     LazyColumn(
         Modifier
             .fillMaxSize()
@@ -369,7 +379,17 @@ private fun LazyListScope.trackItems(
     itemsIndexed(tracks, key = { _, t -> t.id }) { i, t ->
         val app = LocalContext.current.container
         val c = LocalBismo.current
+        val selection = LocalSelection.current
+        val haptic = LocalHapticFeedback.current
+        val picking = selection.active
+        val chosen = selection.isSelected(t.id)
         ListRow(
+            selected = chosen,
+            // Mantener presionada una canción empieza a seleccionar; luego cada toque marca o desmarca.
+            onLongClick = {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                selection.toggle(t)
+            },
             title = t.title,
             subtitle = "${t.artist} · ${fmtDuration(t.durationMs)}",
             highlight = currentId == t.id,
@@ -382,8 +402,14 @@ private fun LazyListScope.trackItems(
                     Thumb(t.artUri(), t.artKey(), Modifier.size(44.dp), corner = 10.dp, icon = BI.Music)
                 }
             },
-            trailing = { TrackMoreButton(t) },
-            onClick = { app.player.play(tracks, i) },
+            trailing = {
+                if (picking) {
+                    SelectCircle(chosen, Modifier.padding(horizontal = 8.dp))
+                } else {
+                    TrackMoreButton(t)
+                }
+            },
+            onClick = { if (picking) selection.toggle(t) else app.player.play(tracks, i) },
             modifier =
                 Modifier
                     .glassSegment(i, tracks.size)
@@ -542,6 +568,8 @@ private fun DetailScreen(
         }
     val tracks by flow.collectAsState(initial = emptyList())
     val total = tracks.sumOf { it.durationMs }
+    val selection = LocalSelection.current
+    SideEffect { selection.visible = tracks }
     val current by app.player.state.collectAsStateWithLifecycle()
 
     LazyColumn(
@@ -621,6 +649,8 @@ private fun SearchScreen(
     val index = remember(tracks) { tracks.map { it to fold("${it.title} ${it.artist} ${it.album}") } }
     val words = remember(query) { fold(query).split(' ').filter { it.isNotBlank() } }
     val songs = remember(index, words) { if (words.isEmpty()) emptyList() else index.filter { matches(it.second, words) }.map { it.first } }
+    val selection = LocalSelection.current
+    SideEffect { selection.visible = songs }
     val foundArtists = remember(artists, words) { if (words.isEmpty()) emptyList() else artists.filter { matches(fold(it.artist), words) }.take(4) }
     val foundAlbums =
         remember(albums, words) {

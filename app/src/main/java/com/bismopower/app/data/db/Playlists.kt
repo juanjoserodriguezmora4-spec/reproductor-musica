@@ -158,6 +158,27 @@ interface PlaylistDao {
         trackIds.forEachIndexed { i, id -> setPosition(playlistId, id, i) }
     }
 
+    // ---------- Canciones borradas ----------
+
+    @Query("DELETE FROM playlist_tracks WHERE trackId IN (:ids)")
+    suspend fun forgetInPlaylists(ids: List<Long>)
+
+    @Query("DELETE FROM favorites WHERE trackId IN (:ids)")
+    suspend fun forgetFavorites(ids: List<Long>)
+
+    @Query("DELETE FROM play_stats WHERE trackId IN (:ids)")
+    suspend fun forgetStats(ids: List<Long>)
+
+    /** Borra todo rastro de canciones que ya no existen en el teléfono. */
+    @Transaction
+    suspend fun forgetTracks(ids: List<Long>) {
+        ids.chunked(500).forEach {
+            forgetInPlaylists(it)
+            forgetFavorites(it)
+            forgetStats(it)
+        }
+    }
+
     // ---------- Favoritas ----------
 
     @Query("SELECT trackId FROM favorites")

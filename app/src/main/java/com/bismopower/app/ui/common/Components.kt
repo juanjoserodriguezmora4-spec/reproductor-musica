@@ -2,7 +2,9 @@ package com.bismopower.app.ui.common
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -189,6 +191,7 @@ fun EmptyState(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ListRow(
     title: String,
@@ -198,13 +201,22 @@ fun ListRow(
     trailing: @Composable RowScope.() -> Unit = {},
     onClick: (() -> Unit)? = null,
     highlight: Boolean = false,
+    onLongClick: (() -> Unit)? = null,
+    selected: Boolean = false,
 ) {
     val c = LocalBismo.current
     Row(
         modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
+            .then(if (selected) Modifier.background(c.accentSoft) else Modifier)
+            .then(
+                when {
+                    onLongClick != null -> Modifier.combinedClickable(onClick = { onClick?.invoke() }, onLongClick = onLongClick)
+                    onClick != null -> Modifier.clickable { onClick() }
+                    else -> Modifier
+                },
+            )
             .padding(vertical = 7.dp, horizontal = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

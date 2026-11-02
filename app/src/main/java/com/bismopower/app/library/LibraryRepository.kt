@@ -83,19 +83,43 @@ class LibraryRepository(
             _scanning.value = true
             try {
                 val s = settings.current()
-                val all = withContext(Dispatchers.IO) { query() }
-                val found =
+                val (all, sizes) = withContext(Dispatchers.IO) { query() to lastSizes }
+                val inFolders =
                     if (s.onlyChosenFolders) {
                         all.filter { t -> s.musicFolders.any { isInside(t.folder, it) } }
                     } else {
                         all
                     }
+                // Con "Ocultar canciones repetidas" solo queda una copia de cada canción.
+                val found = if (s.hideDuplicates) withoutDuplicates(inFolders, sizes) else inFolders
                 dao.replaceAll(found)
                 found.size
             } finally {
                 _scanning.value = false
             }
         }
+
+    /**
+     * Canciones repetidas en las carpetas elegidas (aunque estén ocultas en la biblioteca),
+     * con el tamaño de cada archivo para mostrarlo.
+     */
+    suspend fun duplicates(): Pair<List<DuplicateGroup>, Map<Long, Long>> {
+        if (!hasAudioPermission(context)) return emptyList<DuplicateGroup>() to emptyMap()
+        val s = settings.current()
+        return withContext(Dispatchers.IO) {
+            val all = query()
+            val sizes = lastSizes
+            val inFolders = if (s.onlyChosenFolders) all.filter { t -> s.musicFolders.any { isInside(t.folder, it) } } else all
+            findDuplicates(inFolders, sizes) to sizes
+        }
+    }
+
+    /** Quita de la app canciones que ya no existen (borradas): biblioteca, listas, favoritas y conteos. */
+    suspend fun forget(ids: Collection<Long>) {
+        val list = ids.distinct()
+        list.chunked(500).forEach { dao.deleteIds(it) }
+        db.playlists().forgetTracks(list)
+    }
 
     /** Todas las carpetas del teléfono que tienen música (sin aplicar el filtro), ordenadas por ruta. */
     suspend fun deviceFolders(): List<DeviceFolder> {
@@ -110,6 +134,9 @@ class LibraryRepository(
     }
 
     @Suppress("DEPRECATION") // DATA sigue siendo la forma más fiable de saber la carpeta.
+    /** Tamaño en bytes de cada archivo del último escaneo (sirve para elegir la mejor copia). */
+    @Volatile private var lastSizes: Map<Long, Long> = emptyMap()
+
     private fun query(): List<TrackEntity> {
         val collection =
             if (Build.VERSION.SDK_INT >= 29) {
@@ -129,12 +156,14 @@ class LibraryRepository(
                 add(MediaStore.Audio.Media.YEAR)
                 add(MediaStore.Audio.Media.DATA)
                 add(MediaStore.Audio.Media.DATE_ADDED)
+                add(MediaStore.Audio.Media.SIZE)
                 if (Build.VERSION.SDK_INT >= 29) add(MediaStore.Audio.Media.RELATIVE_PATH)
             }.toTypedArray()
         val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND ${MediaStore.Audio.Media.DURATION} >= ?"
         val args = arrayOf("15000") // Ignora tonos y notas de voz muy cortas.
 
         val out = ArrayList<TrackEntity>()
+        val sizes = HashMap<Long, Long>()
         context.contentResolver.query(collection, projection, selection, args, null)?.use { c ->
             val id = c.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
             val title = c.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
@@ -146,10 +175,12 @@ class LibraryRepository(
             val year = c.getColumnIndexOrThrow(MediaStore.Audio.Media.YEAR)
             val data = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
             val added = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
+            val sizeCol = c.getColumnIndex(MediaStore.Audio.Media.SIZE)
             val relative = c.getColumnIndex("relative_path")
 
             while (c.moveToNext()) {
                 val trackId = c.getLong(id)
+                if (sizeCol >= 0) sizes[trackId] = c.getLong(sizeCol)
                 val path = c.getString(data)
                 val folder =
                     path?.let { File(it).parent }
@@ -172,6 +203,7 @@ class LibraryRepository(
                     )
             }
         }
+        lastSizes = sizes
         return out
     }
 }

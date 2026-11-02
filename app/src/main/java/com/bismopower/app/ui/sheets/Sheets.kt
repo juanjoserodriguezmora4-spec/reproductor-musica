@@ -120,6 +120,11 @@ sealed interface Sheet {
 
     data object SleepTimer : Sheet
 
+    /** Confirmar el borrado (solo Android 8 a 10; en los nuevos pregunta Android). */
+    data class ConfirmDelete(
+        val tracks: List<TrackEntity>,
+    ) : Sheet
+
     /** Estilo y color del visualizador. [accent] es el color de la canción (para la paleta "Carátula"). */
     data class Visualizer(
         val accent: Color,
@@ -206,6 +211,7 @@ fun SheetHost(controller: SheetController) {
                             is Sheet.PlaylistMenu -> PlaylistMenu(sheet, controller)
                             Sheet.SleepTimer -> SleepTimerSheet(controller)
                             is Sheet.Visualizer -> VisualizerSheet(sheet)
+                            is Sheet.ConfirmDelete -> ConfirmDeleteSheet(sheet, controller)
                             null -> Unit
                         }
                     }
@@ -242,8 +248,8 @@ private fun ColumnScope.TrackMenu(
         controller.close()
     }
     SheetRow(BI.Queue, "Añadir al final de la cola") {
-        app.player.addToQueue(listOf(t))
-        context.toast("Añadida a la cola")
+        val added = app.player.addToQueue(listOf(t))
+        context.toast(if (added == 0) "Ya está en la cola" else "Añadida a la cola")
         controller.close()
     }
     SheetRow(if (fav) BI.HeartFill else BI.Heart, if (fav) "Quitar de favoritas" else "Añadir a favoritas", highlight = fav) {
@@ -252,10 +258,56 @@ private fun ColumnScope.TrackMenu(
     SheetRow(BI.PlaylistAdd, "Añadir a una lista") { controller.open(Sheet.AddToPlaylist(listOf(t.id))) }
     val playlistId = sheet.playlistId
     if (playlistId != null) {
-        SheetRow(BI.Trash, "Quitar de esta lista", danger = true) {
+        SheetRow(BI.Close, "Quitar de esta lista") {
             app.appScope.launch { app.playlists.remove(playlistId, t.id) }
             controller.close()
         }
+    }
+    val deleter = LocalDeleter.current
+    SheetRow(BI.Trash, "Borrar del teléfono", danger = true) {
+        controller.close()
+        deleter.request(listOf(t))
+    }
+}
+
+// ---------------------------------------------------------------- confirmar borrado (Android 8 a 10)
+
+@Composable
+private fun ColumnScope.ConfirmDeleteSheet(
+    sheet: Sheet.ConfirmDelete,
+    controller: SheetController,
+) {
+    val c = LocalBismo.current
+    val deleter = LocalDeleter.current
+    val n = sheet.tracks.size
+    SheetTitle(if (n == 1) "¿Borrar «${sheet.tracks[0].title}»?" else "¿Borrar $n canciones?")
+    Text(
+        "Se borran del teléfono para siempre, no solo de BismoPower. Esto no se puede deshacer.",
+        style = T.body,
+        color = c.text,
+        modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+    )
+    Spacer(Modifier.height(14.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Box(
+            Modifier
+                .weight(1f)
+                .glass(Corners.button, strong = true, shadow = false)
+                .clickable { controller.close() }
+                .padding(vertical = 13.dp),
+            contentAlignment = Alignment.Center,
+        ) { Text("Cancelar", style = T.label, color = c.text) }
+        Box(
+            Modifier
+                .weight(1f)
+                .clip(Corners.button)
+                .background(c.err)
+                .clickable {
+                    controller.close()
+                    deleter.confirmLegacy(sheet.tracks)
+                }.padding(vertical = 13.dp),
+            contentAlignment = Alignment.Center,
+        ) { Text("Borrar", style = T.label, color = Color.White) }
     }
 }
 

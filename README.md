@@ -18,6 +18,7 @@ Reproductor de música local para Android con el diseño de vidrio esmerilado de
 - Letras sincronizadas (.lrc o incluidas en la canción) y widget para la pantalla de inicio
 - Visualizador con 7 estilos y 8 paletas de color
 - Lista de canciones ordenable (nombre, artista, álbum, recientes, duración) o mezclada
+- Seleccionar varias canciones, borrarlas del teléfono y limpiar las copias repetidas
 
 ## Descargar
 

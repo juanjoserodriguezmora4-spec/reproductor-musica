@@ -79,7 +79,10 @@ private fun folderName(treeUri: String): String =
     }.getOrDefault("la carpeta elegida")
 
 @Composable
-fun SettingsScreen(onOpenFolders: () -> Unit = {}) {
+fun SettingsScreen(
+    onOpenFolders: () -> Unit = {},
+    onOpenDuplicates: () -> Unit = {},
+) {
     val c = LocalBismo.current
     val app = LocalContext.current.container
     val scope = rememberCoroutineScope()
@@ -237,6 +240,34 @@ fun SettingsScreen(onOpenFolders: () -> Unit = {}) {
                             style = T.tiny,
                             color = c.muted,
                         )
+                    }
+                    Icon(BI.Chevron, null, tint = c.muted, modifier = Modifier.size(18.dp))
+                }
+                Divider()
+                ToggleRow(
+                    BI.Music,
+                    "Ocultar canciones repetidas",
+                    "Si tienes la misma canción varias veces, se ve solo una (la de mejor calidad).",
+                    checked = s.hideDuplicates,
+                ) { on ->
+                    scope.launch {
+                        app.settings.set(SettingsRepository.HIDE_DUPLICATES, on)
+                        lastResult = app.library.scan()
+                    }
+                }
+                Divider()
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable { onOpenDuplicates() }
+                        .padding(horizontal = 14.dp, vertical = 13.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(BI.Trash, null, tint = c.muted, modifier = Modifier.size(19.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Borrar copias repetidas", style = T.body, color = c.text)
+                        Text("Revisa las canciones que tienes más de una vez", style = T.tiny, color = c.muted)
                     }
                     Icon(BI.Chevron, null, tint = c.muted, modifier = Modifier.size(18.dp))
                 }
