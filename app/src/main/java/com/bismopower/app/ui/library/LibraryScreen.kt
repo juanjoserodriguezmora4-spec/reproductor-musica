@@ -86,6 +86,8 @@ import com.bismopower.app.ui.common.fmtDuration
 import com.bismopower.app.ui.common.glass
 import com.bismopower.app.ui.common.glassSegment
 import com.bismopower.app.ui.common.plural
+import com.bismopower.app.ui.sheets.LocalSheets
+import com.bismopower.app.ui.sheets.Sheet
 import com.bismopower.app.ui.sheets.TrackMoreButton
 import com.bismopower.app.ui.sheets.toast
 import com.bismopower.app.ui.theme.LocalBismo
@@ -580,7 +582,15 @@ private fun DetailScreen(
     ) {
         item(key = "top") {
             Column(Modifier.fillMaxWidth()) {
-                IconChip(BI.Back, onBack, description = "Volver")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconChip(BI.Back, onBack, description = "Volver")
+                    Spacer(Modifier.weight(1f))
+                    // En un álbum: traer canciones que quedaron en otro (por ejemplo en "Música").
+                    if (d is Detail.Album) {
+                        val sheets = LocalSheets.current
+                        IconChip(BI.Plus, { sheets.open(Sheet.AddToAlbum(d.id, d.title, d.artist)) }, description = "Añadir canciones a este álbum")
+                    }
+                }
                 Spacer(Modifier.height(16.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     val art = tracks.firstOrNull()?.artUri()

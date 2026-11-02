@@ -12,6 +12,8 @@ import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Transaction
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 /** Una canción encontrada en MediaStore. El id es el mismo de MediaStore. */
@@ -117,6 +119,14 @@ interface TrackDao {
     @Query("SELECT id FROM tracks")
     suspend fun allIds(): List<Long>
 
+    /** Cambia el álbum de estas canciones en la biblioteca guardada (al instante, sin escanear). */
+    @Query("UPDATE tracks SET album = :album, albumId = :albumId WHERE id IN (:ids)")
+    suspend fun setAlbum(
+        ids: List<Long>,
+        album: String,
+        albumId: Long,
+    )
+
     @Query("DELETE FROM tracks WHERE id IN (:ids)")
     suspend fun deleteIds(ids: List<Long>)
 }
@@ -128,8 +138,9 @@ interface TrackDao {
         PlaylistTrackEntity::class,
         FavoriteEntity::class,
         PlayStatEntity::class,
+        AlbumOverrideEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class BismoDatabase : RoomDatabase() {
@@ -138,12 +149,24 @@ abstract class BismoDatabase : RoomDatabase() {
     abstract fun playlists(): PlaylistDao
 
     companion object {
+        /** 2 → 3: tabla para los álbumes cambiados a mano (no toca las listas ni las favoritas). */
+        private val MIGRATION_2_3 =
+            object : Migration(2, 3) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        "CREATE TABLE IF NOT EXISTS `album_overrides` (`trackId` INTEGER NOT NULL, " +
+                            "`album` TEXT NOT NULL, `albumId` INTEGER NOT NULL, PRIMARY KEY(`trackId`))",
+                    )
+                }
+            }
+
         fun build(context: Context): BismoDatabase =
             Room
                 .databaseBuilder(context, BismoDatabase::class.java, "bismo.db")
                 // La versión 1 solo guardaba la biblioteca escaneada (se vuelve a armar sola).
                 // Desde la 2 hay listas y favoritas del usuario: cualquier cambio futuro en las
                 // tablas necesita una Migration de verdad para no borrarlas.
+                .addMigrations(MIGRATION_2_3)
                 .fallbackToDestructiveMigrationFrom(dropAllTables = true, 1)
                 .build()
     }

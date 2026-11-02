@@ -4,6 +4,8 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -102,6 +104,7 @@ fun SelectionBar(
     onQueue: () -> Unit,
     onAddToList: () -> Unit,
     onFavorite: () -> Unit,
+    onAlbum: () -> Unit,
     onDelete: () -> Unit,
 ) {
     val c = LocalBismo.current
@@ -142,12 +145,19 @@ fun SelectionBar(
                         .padding(horizontal = 10.dp, vertical = 6.dp),
             )
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+        // Se desliza de lado si no caben todas las acciones.
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
             BarAction(BI.Play, "Tocar", onClick = onPlay)
             BarAction(BI.PlayNext, "Después", onClick = onPlayNext)
             BarAction(BI.Queue, "Cola", onClick = onQueue)
             BarAction(BI.PlaylistAdd, "Lista", onClick = onAddToList)
             BarAction(BI.Heart, "Favorita", onClick = onFavorite)
+            BarAction(BI.Disc, "Álbum", onClick = onAlbum)
             BarAction(BI.Trash, "Borrar", tint = c.err, onClick = onDelete)
         }
     }
@@ -163,9 +173,10 @@ private fun BarAction(
     val c = LocalBismo.current
     Column(
         Modifier
+            .width(52.dp)
             .clip(Corners.button)
             .clickable { onClick() }
-            .padding(horizontal = 4.dp, vertical = 5.dp),
+            .padding(horizontal = 2.dp, vertical = 5.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Icon(icon, null, tint = tint ?: c.text, modifier = Modifier.size(21.dp))

@@ -9,6 +9,7 @@ import android.os.Build
 import android.provider.MediaStore
 import androidx.core.content.ContextCompat
 import com.bismopower.app.data.SettingsRepository
+import com.bismopower.app.data.db.AlbumOverrideEntity
 import com.bismopower.app.data.db.BismoDatabase
 import com.bismopower.app.data.db.TrackEntity
 import kotlinx.coroutines.Dispatchers
@@ -83,7 +84,9 @@ class LibraryRepository(
             _scanning.value = true
             try {
                 val s = settings.current()
-                val (all, sizes) = withContext(Dispatchers.IO) { query() to lastSizes }
+                val (scanned, sizes) = withContext(Dispatchers.IO) { query() to lastSizes }
+                // Los álbumes cambiados a mano mandan sobre lo que diga el archivo.
+                val all = withAlbumOverrides(scanned)
                 val inFolders =
                     if (s.onlyChosenFolders) {
                         all.filter { t -> s.musicFolders.any { isInside(t.folder, it) } }
@@ -113,6 +116,41 @@ class LibraryRepository(
             findDuplicates(inFolders, sizes) to sizes
         }
     }
+
+    /** Canciones con el álbum cambiado a mano (para ofrecer "volver a su álbum"). */
+    val overriddenIds = db.playlists().overriddenIds()
+
+    private suspend fun withAlbumOverrides(tracks: List<TrackEntity>): List<TrackEntity> {
+        val overrides = db.playlists().albumOverrides().associateBy { it.trackId }
+        if (overrides.isEmpty()) return tracks
+        return tracks.map { t -> overrides[t.id]?.let { o -> t.copy(album = o.album, albumId = o.albumId) } ?: t }
+    }
+
+    /**
+     * Mueve canciones a un álbum (solo dentro de BismoPower: el archivo no cambia).
+     * Con [albumId] se unen a un álbum que ya existe; sin él se crea uno nuevo con ese nombre.
+     */
+    suspend fun moveToAlbum(
+        tracks: List<TrackEntity>,
+        album: String,
+        albumId: Long? = null,
+    ) {
+        val name = album.trim()
+        if (tracks.isEmpty() || name.isEmpty()) return
+        val id = albumId ?: customAlbumId(name)
+        val ids = tracks.map { it.id }.distinct()
+        db.playlists().setAlbumOverrides(ids.map { AlbumOverrideEntity(it, name, id) })
+        ids.chunked(500).forEach { dao.setAlbum(it, name, id) }
+    }
+
+    /** Devuelve estas canciones al álbum que dice su archivo. */
+    suspend fun restoreAlbum(ids: List<Long>) {
+        db.playlists().clearAlbumOverrides(ids)
+        scan()
+    }
+
+    /** Id inventado (negativo, para no chocar con los de Android) para un álbum nuevo: siempre el mismo para el mismo nombre. */
+    private fun customAlbumId(name: String): Long = -(fold(name).hashCode().toLong() and 0x7FFFFFFFL) - 1
 
     /** Quita de la app canciones que ya no existen (borradas): biblioteca, listas, favoritas y conteos. */
     suspend fun forget(ids: Collection<Long>) {

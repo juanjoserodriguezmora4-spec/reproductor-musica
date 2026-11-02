@@ -120,6 +120,18 @@ sealed interface Sheet {
 
     data object SleepTimer : Sheet
 
+    /** Elegir a qué álbum se mueven estas canciones (o crear uno). */
+    data class MoveToAlbum(
+        val tracks: List<TrackEntity>,
+    ) : Sheet
+
+    /** Desde un álbum: elegir canciones de otros lados para meterlas en él. */
+    data class AddToAlbum(
+        val albumId: Long,
+        val album: String,
+        val artist: String,
+    ) : Sheet
+
     /** Confirmar el borrado (solo Android 8 a 10; en los nuevos pregunta Android). */
     data class ConfirmDelete(
         val tracks: List<TrackEntity>,
@@ -212,6 +224,8 @@ fun SheetHost(controller: SheetController) {
                             Sheet.SleepTimer -> SleepTimerSheet(controller)
                             is Sheet.Visualizer -> VisualizerSheet(sheet)
                             is Sheet.ConfirmDelete -> ConfirmDeleteSheet(sheet, controller)
+                            is Sheet.MoveToAlbum -> MoveToAlbumSheet(sheet, controller)
+                            is Sheet.AddToAlbum -> AddToAlbumSheet(sheet, controller)
                             null -> Unit
                         }
                     }
@@ -263,6 +277,7 @@ private fun ColumnScope.TrackMenu(
             controller.close()
         }
     }
+    SheetRow(BI.Disc, "Mover a otro álbum") { controller.open(Sheet.MoveToAlbum(listOf(t))) }
     val deleter = LocalDeleter.current
     SheetRow(BI.Trash, "Borrar del teléfono", danger = true) {
         controller.close()

@@ -228,6 +228,17 @@ Reglas:
   `DuplicatesScreen` deja borrar las demás. La cola tampoco repite: `addToQueue` salta las
   que ya están y `playNext` mueve la canción si ya estaba
 
+**Álbumes a mano**
+- Tabla `album_overrides` (base de datos versión 3, `MIGRATION_2_3`): álbum elegido por el
+  usuario para una canción. `LibraryRepository.scan()` la aplica encima de las etiquetas;
+  `moveToAlbum` también actualiza `tracks` al instante. Álbum nuevo = `albumId` negativo
+  (hash del nombre). El archivo no se modifica
+- `Sheet.MoveToAlbum` (menú ⋯ y barra de selección: "Álbum") y `Sheet.AddToAlbum` (botón +
+  en el detalle de un álbum; marca solas las canciones "sueltas" del mismo artista)
+- Por qué pasaba: las canciones sin etiqueta de álbum quedan en un "álbum" con el nombre de
+  su carpeta (por ejemplo "Música"). Bruma ya graba el álbum en todas las canciones de un
+  álbum de YouTube Music (`--ppa Metadata+ffmpeg_o:-metadata album=…`)
+
 **Ideas para después**
 - Reanudar la última cola al abrir (onPlaybackResumption) y que el widget pueda arrancarla
 - Motor nativo (C++/Oboe), onda real en el reproductor, presets propios del ecualizador

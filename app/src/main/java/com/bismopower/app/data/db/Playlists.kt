@@ -60,6 +60,18 @@ data class PlayStatEntity(
     val lastPlayed: Long,
 )
 
+/**
+ * Álbum elegido a mano para una canción (con "Mover a otro álbum"). Se aplica en cada
+ * escaneo encima de lo que diga el archivo; el archivo no se toca.
+ * [albumId] es el de un álbum que ya existe o uno negativo inventado para un álbum nuevo.
+ */
+@Entity(tableName = "album_overrides")
+data class AlbumOverrideEntity(
+    @PrimaryKey val trackId: Long,
+    val album: String,
+    val albumId: Long,
+)
+
 /** Una lista con lo necesario para mostrarla: cuántas canciones tiene y una para la carátula. */
 data class PlaylistRow(
     val id: Long,
@@ -158,6 +170,20 @@ interface PlaylistDao {
         trackIds.forEachIndexed { i, id -> setPosition(playlistId, id, i) }
     }
 
+    // ---------- Álbumes cambiados a mano ----------
+
+    @Query("SELECT * FROM album_overrides")
+    suspend fun albumOverrides(): List<AlbumOverrideEntity>
+
+    @Query("SELECT trackId FROM album_overrides")
+    fun overriddenIds(): Flow<List<Long>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun setAlbumOverrides(rows: List<AlbumOverrideEntity>)
+
+    @Query("DELETE FROM album_overrides WHERE trackId IN (:ids)")
+    suspend fun clearAlbumOverrides(ids: List<Long>)
+
     // ---------- Canciones borradas ----------
 
     @Query("DELETE FROM playlist_tracks WHERE trackId IN (:ids)")
@@ -176,6 +202,7 @@ interface PlaylistDao {
             forgetInPlaylists(it)
             forgetFavorites(it)
             forgetStats(it)
+            clearAlbumOverrides(it)
         }
     }
 

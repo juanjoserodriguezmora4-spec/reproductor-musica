@@ -162,6 +162,10 @@ fun BismoRoot(
                             context.toast("Añadidas a favoritas")
                             selection.clear()
                         },
+                        onAlbum = {
+                            sheets.open(Sheet.MoveToAlbum(selection.inOrder()))
+                            selection.clear()
+                        },
                         onDelete = {
                             deleter.request(selection.inOrder()) { selection.clear() }
                         },
