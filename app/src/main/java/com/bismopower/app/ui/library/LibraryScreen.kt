@@ -28,10 +28,16 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -47,6 +53,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
@@ -75,6 +82,7 @@ import com.bismopower.app.ui.common.glass
 import com.bismopower.app.ui.common.glassSegment
 import com.bismopower.app.ui.common.plural
 import com.bismopower.app.ui.sheets.TrackMoreButton
+import com.bismopower.app.ui.sheets.toast
 import com.bismopower.app.ui.theme.LocalBismo
 import com.bismopower.app.ui.theme.T
 import java.io.File
@@ -161,11 +169,55 @@ fun LibraryScreen(onOpenFolders: () -> Unit = {}) {
                     onOpen = { detail = it },
                 )
             } else {
-                Sections(section, { section = it }, onOpen = { detail = it }, onOpenFolders = onOpenFolders, onSearch = { searching = true })
+                SectionsWithRefresh(section, { section = it }, onOpen = { detail = it }, onOpenFolders = onOpenFolders, onSearch = { searching = true })
             }
         } else {
             DetailScreen(d, onBack = { detail = null })
         }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SectionsWithRefresh(
+    section: Int,
+    onSection: (Int) -> Unit,
+    onOpen: (Detail) -> Unit,
+    onOpenFolders: () -> Unit,
+    onSearch: () -> Unit,
+) {
+    val c = LocalBismo.current
+    val context = LocalContext.current
+    val app = context.container
+    val scope = rememberCoroutineScope()
+    val scanning by app.library.scanning.collectAsStateWithLifecycle()
+    val state = rememberPullToRefreshState()
+
+    // Deslizar hacia abajo desde arriba de la lista vuelve a buscar la música del teléfono.
+    PullToRefreshBox(
+        isRefreshing = scanning,
+        onRefresh = {
+            scope.launch {
+                val found = app.library.scan()
+                context.toast("Biblioteca al día: ${plural(found, "canción", "canciones")}")
+            }
+        },
+        state = state,
+        modifier = Modifier.fillMaxSize(),
+        indicator = {
+            PullToRefreshDefaults.Indicator(
+                state = state,
+                isRefreshing = scanning,
+                modifier =
+                    Modifier
+                        .align(Alignment.TopCenter)
+                        .statusBarsPadding(),
+                containerColor = if (c.dark) Color(0xFF1D2333) else Color.White,
+                color = c.accent,
+            )
+        },
+    ) {
+        Sections(section, onSection, onOpen, onOpenFolders, onSearch)
     }
 }
 
@@ -192,6 +244,8 @@ private fun Sections(
             Column(
                 Modifier
                     .fillMaxSize()
+                    // Con scroll para que también aquí funcione deslizar hacia abajo para actualizar.
+                    .verticalScroll(rememberScrollState())
                     .statusBarsPadding()
                     .padding(horizontal = 16.dp, vertical = 14.dp),
             ) {

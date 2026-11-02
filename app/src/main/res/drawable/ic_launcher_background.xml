@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Degradado azul → lila → menta, como el logo de Bruma -->
+<!-- Fondo rojo que se desvanece: rojo intenso abajo a la izquierda, rosado claro arriba a la derecha. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
@@ -9,38 +9,40 @@
     <path android:pathData="M0,0h108v108h-108z">
         <aapt:attr name="android:fillColor">
             <gradient
-                android:endX="108"
-                android:endY="108"
-                android:startX="0"
-                android:startY="0"
+                android:endX="96"
+                android:endY="8"
+                android:startX="12"
+                android:startY="100"
                 android:type="linear">
-                <item android:color="#FF9DBBFF" android:offset="0" />
-                <item android:color="#FFC7B4FF" android:offset="0.55" />
-                <item android:color="#FFA8EBD9" android:offset="1" />
+                <item android:color="#FFB3122E" android:offset="0" />
+                <item android:color="#FFE5384F" android:offset="0.5" />
+                <item android:color="#FFFF9AA8" android:offset="1" />
             </gradient>
         </aapt:attr>
     </path>
+    <!-- Brillo suave arriba (el "desvanecido") -->
     <path android:pathData="M0,0h108v108h-108z">
         <aapt:attr name="android:fillColor">
             <gradient
-                android:centerX="92"
-                android:centerY="94"
-                android:gradientRadius="46"
+                android:centerX="78"
+                android:centerY="18"
+                android:gradientRadius="58"
                 android:type="radial">
-                <item android:color="#CC7FE0CC" android:offset="0" />
-                <item android:color="#007FE0CC" android:offset="1" />
+                <item android:color="#99FFFFFF" android:offset="0" />
+                <item android:color="#00FFFFFF" android:offset="1" />
             </gradient>
         </aapt:attr>
     </path>
+    <!-- Sombra suave abajo para dar profundidad -->
     <path android:pathData="M0,0h108v108h-108z">
         <aapt:attr name="android:fillColor">
             <gradient
-                android:centerX="14"
-                android:centerY="12"
-                android:gradientRadius="40"
+                android:centerX="20"
+                android:centerY="104"
+                android:gradientRadius="56"
                 android:type="radial">
-                <item android:color="#998FB0FF" android:offset="0" />
-                <item android:color="#008FB0FF" android:offset="1" />
+                <item android:color="#66520014" android:offset="0" />
+                <item android:color="#00520014" android:offset="1" />
             </gradient>
         </aapt:attr>
     </path>

@@ -188,6 +188,13 @@ Reglas:
 - Letras: botón en la barra de arriba del reproductor. Android 11+ no deja leer .lrc sueltos,
   por eso existe la "carpeta de letras" (OpenDocumentTree con permiso persistente)
 
+**Después de la Fase 3**
+- Biblioteca: deslizar hacia abajo vuelve a escanear (`PullToRefreshBox` en
+  `SectionsWithRefresh`; el indicador usa `library.scanning`, así que también sale en el
+  escaneo automático al abrir)
+- Ícono nuevo: corchea grande de vidrio (blanca translúcida, un solo trazado) sobre fondo
+  rojo desvanecido (#B3122E → #E5384F → #FF9AA8 con brillo blanco arriba)
+
 **Ideas para después**
 - Reanudar la última cola al abrir (onPlaybackResumption) y que el widget pueda arrancarla
 - Motor nativo (C++/Oboe), onda real en el reproductor, presets propios del ecualizador

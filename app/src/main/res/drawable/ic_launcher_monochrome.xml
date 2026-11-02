@@ -1,21 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Ícono temático de Android 13+: la misma corchea en un solo color. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <path
-        android:fillColor="#FF000000"
-        android:pathData="M47.2,54.2a3.6,3.6 0,1 0,7.2 0a3.6,3.6 0,1 0,-7.2 0z" />
-    <path
-        android:pathData="M54.4,54.2V39.4c2.9,0.6 6.6,2.6 6.6,6.8"
-        android:strokeWidth="2.8"
-        android:strokeColor="#FF000000"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round" />
-    <path
-        android:pathData="M42.8,64.4v2.4M48.4,62v7.2M54,63.6v4M59.6,62v7.2M65.2,64.4v2.4"
-        android:strokeWidth="2.4"
-        android:strokeColor="#FF000000"
-        android:strokeLineCap="round" />
+    <group
+        android:pivotX="51"
+        android:pivotY="55"
+        android:scaleX="1.12"
+        android:scaleY="1.12"
+        android:translateX="3"
+        android:translateY="-1">
+        <path
+            android:fillColor="#FF000000"
+            android:pathData="M35.54,73.08A9,6.5 -20 1,1 52.46,66.92A9,6.5 -20 1,1 35.54,73.08ZM49.6,30.5H53.4V68.5H49.6ZM53.4,30.5C53.4,37.5 57.8,40.2 61.8,43.6C65.9,47.1 68.4,51.9 66,58.8C67.1,52.9 64.3,49.2 60.4,47.3C57.8,46 55.2,45.4 53.4,45.2Z" />
+    </group>
 </vector>
