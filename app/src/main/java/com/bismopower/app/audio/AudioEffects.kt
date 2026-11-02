@@ -8,19 +8,39 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
+import java.lang.ref.WeakReference
 import java.nio.ByteBuffer
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.math.abs
 import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlin.math.tanh
 
-/** Cadena de efectos que se mete en el AudioSink de ExoPlayer. */
+/**
+ * Cadena de efectos que se mete en el AudioSink de ExoPlayer.
+ *
+ * Cada reproductor necesita su propia copia del ecualizador (un AudioProcessor no se puede
+ * compartir): el principal y el que suena unos segundos durante el fundido entre canciones.
+ * [update] le pasa los mismos ajustes a todas las copias.
+ */
 @UnstableApi
 class AudioEffects {
-    val equalizer = ParametricEq()
+    @Volatile private var settings = EqSettings()
+    private val equalizers = CopyOnWriteArrayList<WeakReference<ParametricEq>>()
 
-    /** Orden en que se procesa el audio, de primero a último. */
-    val processors: List<AudioProcessor> = listOf(equalizer)
+    /** Efectos nuevos para un reproductor, en el orden en que se procesa el audio. */
+    fun newProcessors(): Array<AudioProcessor> {
+        val eq = ParametricEq()
+        eq.update(settings)
+        equalizers.removeIf { it.get() == null }
+        equalizers += WeakReference(eq)
+        return arrayOf(eq)
+    }
+
+    fun update(newSettings: EqSettings) {
+        settings = newSettings
+        equalizers.forEach { it.get()?.update(newSettings) }
+    }
 }
 
 /**
@@ -207,6 +227,6 @@ class BismoRenderersFactory(
         DefaultAudioSink
             .Builder(context)
             .setEnableFloatOutput(enableFloatOutput)
-            .setAudioProcessors(effects.processors.toTypedArray())
+            .setAudioProcessors(effects.newProcessors())
             .build()
 }

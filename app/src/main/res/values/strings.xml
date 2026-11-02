@@ -1,4 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">BismoPower</string>
+
+    <!-- Widget -->
+    <string name="widget_description">Lo que está sonando, con pausa, anterior y siguiente</string>
+    <string name="widget_idle_title">BismoPower</string>
+    <string name="widget_idle_artist">Toca para elegir música</string>
+    <string name="widget_art">Abrir BismoPower</string>
+    <string name="widget_prev">Anterior</string>
+    <string name="widget_play">Reproducir</string>
+    <string name="widget_pause">Pausar</string>
+    <string name="widget_next">Siguiente</string>
 </resources>

@@ -11,6 +11,7 @@ import com.bismopower.app.data.EqRepository
 import com.bismopower.app.data.SettingsRepository
 import com.bismopower.app.data.db.BismoDatabase
 import com.bismopower.app.library.LibraryRepository
+import com.bismopower.app.library.LyricsRepository
 import com.bismopower.app.library.PlaylistRepository
 import com.bismopower.app.library.TrackArtFetcher
 import com.bismopower.app.player.PlayerConnection
@@ -53,6 +54,9 @@ class AppContainer(
     /** Listas de reproducción, favoritas y lo más escuchado. */
     val playlists = PlaylistRepository(db)
 
+    /** Letras de las canciones (.lrc o incluidas en el archivo). */
+    val lyrics = LyricsRepository(app, settings)
+
     /** Temporizador para dormir. */
     val sleepTimer = SleepTimer(appScope, player)
 
@@ -60,7 +64,7 @@ class AppContainer(
     val audioEffects = AudioEffects()
 
     /** Ajustes del ecualizador: los guarda y se los pasa al motor de audio. */
-    val equalizer = EqRepository(app, appScope) { audioEffects.equalizer.update(it) }
+    val equalizer = EqRepository(app, appScope) { audioEffects.update(it) }
 }
 
 val Context.container: AppContainer

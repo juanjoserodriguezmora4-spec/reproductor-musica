@@ -179,4 +179,5 @@ object BI {
     val TrendUp by lazy { build("trend_up", listOf("M3 17l6-6 4 4 8-8", "M15 7h6v6")) }
     val History by lazy { build("history", listOf("M3.5 12a8.5 8.5 0 1 0 2.7-6.2", "M3 4v4.5h4.5", "M12 8v4.5l3 2")) }
     val PlayNext by lazy { build("play_next", listOf("M3 12h11", "M3 18h11"), listOf("M14 3v7l6-3.5z")) }
+    val Lyrics by lazy { build("lyrics", listOf("M4 5h16v11H10l-4 3.5V16H4z", "M8 9h8", "M8 12.5h5")) }
 }

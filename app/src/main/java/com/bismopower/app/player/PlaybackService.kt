@@ -17,8 +17,13 @@ import com.bismopower.app.audio.BismoRenderersFactory
 import com.bismopower.app.container
 import com.bismopower.app.library.TrackArtBitmapLoader
 import com.bismopower.app.ui.MainActivity
+import com.bismopower.app.widget.WidgetSync
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 const val EXTRA_ROUTE = "route"
@@ -29,6 +34,11 @@ class PlaybackService : MediaSessionService() {
     private var session: MediaSession? = null
     private var artLoader: TrackArtBitmapLoader? = null
     private var counter: PlayCounter? = null
+    private var crossfader: Crossfader? = null
+    private var widget: WidgetSync? = null
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
+    @Volatile private var crossfadeMs = 0L
 
     override fun onCreate() {
         super.onCreate()
@@ -69,6 +79,21 @@ class PlaybackService : MediaSessionService() {
         val app = container
         counter = PlayCounter(player) { id -> app.appScope.launch { app.playlists.recordPlay(id) } }.also { it.attach() }
 
+        // Fundido entre canciones: lee los segundos de Ajustes. No se usa con el temporizador
+        // "al terminar la canción", porque ese necesita que la canción termine sola.
+        serviceScope.launch { app.settings.flow.collect { crossfadeMs = it.crossfadeSec * 1000L } }
+        crossfader =
+            Crossfader(
+                context = this,
+                main = player,
+                effects = app.audioEffects,
+                fadeMs = { crossfadeMs },
+                allowed = { !app.sleepTimer.state.value.endOfTrack },
+            ).also { it.attach() }
+
+        // Mantiene al día el widget de la pantalla de inicio.
+        widget = WidgetSync(this, player).also { it.attach() }
+
         // Carga la carátula de cada canción (también las de Bruma) para la notificación y la pantalla de bloqueo.
         val loader = TrackArtBitmapLoader(this)
         artLoader = loader
@@ -106,8 +131,13 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        serviceScope.cancel()
         counter?.release()
         counter = null
+        crossfader?.release()
+        crossfader = null
+        widget?.release()
+        widget = null
         session?.run {
             player.release()
             release()

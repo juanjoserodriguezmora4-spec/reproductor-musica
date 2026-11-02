@@ -35,6 +35,19 @@
             </intent-filter>
         </activity>
 
+        <!-- Widget de la pantalla de inicio -->
+        <receiver
+            android:name=".widget.PlayerWidget"
+            android:exported="false"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_player_info" />
+        </receiver>
+
         <service
             android:name=".player.PlaybackService"
             android:exported="true"

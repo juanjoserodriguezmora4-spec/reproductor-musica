@@ -1,6 +1,11 @@
 package com.bismopower.app.ui.settings
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
+import android.provider.DocumentsContract
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -63,6 +68,15 @@ import com.bismopower.app.ui.theme.T
 import kotlinx.coroutines.launch
 
 private val THEMES = listOf("SYSTEM", "LIGHT", "DARK")
+private val CROSSFADE_SECONDS = listOf(0, 3, 6, 10)
+private val CROSSFADE_LABELS = listOf("Apagado", "3 s", "6 s", "10 s")
+
+/** Nombre legible de la carpeta elegida ("primary:Music/Letras" → "Music/Letras"). */
+private fun folderName(treeUri: String): String =
+    runCatching {
+        val id = DocumentsContract.getTreeDocumentId(Uri.parse(treeUri))
+        id.substringAfter(':').ifBlank { "Almacenamiento interno" }
+    }.getOrDefault("la carpeta elegida")
 
 @Composable
 fun SettingsScreen(onOpenFolders: () -> Unit = {}) {
@@ -73,6 +87,19 @@ fun SettingsScreen(onOpenFolders: () -> Unit = {}) {
     val scanning by app.library.scanning.collectAsStateWithLifecycle()
     val tracks by app.library.tracks.collectAsState(initial = emptyList())
     var lastResult by remember { mutableStateOf<Int?>(null) }
+    val context = LocalContext.current
+
+    // Elegir la carpeta de letras: Android pregunta y la app guarda el permiso para siempre.
+    val pickLyrics =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+            if (uri != null) {
+                runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+                scope.launch {
+                    app.settings.set(SettingsRepository.LYRICS_FOLDER, uri.toString())
+                    app.lyrics.invalidate()
+                }
+            }
+        }
 
     LazyColumn(
         Modifier
@@ -116,6 +143,74 @@ fun SettingsScreen(onOpenFolders: () -> Unit = {}) {
                     "Paneles opacos y sin desenfoque. Se lee mejor y ahorra batería.",
                     checked = s.reduceTransparency,
                 ) { scope.launch { app.settings.set(SettingsRepository.REDUCE_TRANSPARENCY, it) } }
+            }
+        }
+
+        item { GroupTitle("REPRODUCCIÓN") }
+        item {
+            Group {
+                Column(Modifier.padding(14.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(BI.Wave, null, tint = c.muted, modifier = Modifier.size(19.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Text("Fundido entre canciones", style = T.body, color = c.text)
+                    }
+                    Spacer(Modifier.size(10.dp))
+                    Segmented(
+                        CROSSFADE_LABELS,
+                        CROSSFADE_SECONDS.indexOf(s.crossfadeSec).coerceAtLeast(0),
+                        { scope.launch { app.settings.set(SettingsRepository.CROSSFADE_SEC, CROSSFADE_SECONDS[it]) } },
+                    )
+                    Spacer(Modifier.size(8.dp))
+                    Text(
+                        if (s.crossfadeSec == 0) {
+                            "Apagado: una canción empieza justo donde termina la otra, sin silencios (ideal para discos en vivo o mezclados)."
+                        } else {
+                            "La canción que termina baja mientras la siguiente sube, durante ${s.crossfadeSec} segundos."
+                        },
+                        style = T.tiny,
+                        color = c.muted,
+                    )
+                }
+                Divider()
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable { pickLyrics.launch(null) }
+                        .padding(start = 14.dp, end = 6.dp, top = 13.dp, bottom = 13.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(BI.Lyrics, null, tint = c.muted, modifier = Modifier.size(19.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Carpeta de letras", style = T.body, color = c.text)
+                        Text(
+                            s.lyricsFolder?.let { "Buscando archivos .lrc en «${folderName(it)}»" }
+                                ?: "Elige dónde guardas tus archivos .lrc",
+                            style = T.tiny,
+                            color = c.muted,
+                        )
+                    }
+                    if (s.lyricsFolder != null) {
+                        Icon(
+                            BI.Close,
+                            "Quitar la carpeta de letras",
+                            tint = c.muted,
+                            modifier =
+                                Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .clickable {
+                                        scope.launch {
+                                            app.settings.set(SettingsRepository.LYRICS_FOLDER, "")
+                                            app.lyrics.invalidate()
+                                        }
+                                    }.padding(11.dp),
+                        )
+                    } else {
+                        Icon(BI.Chevron, null, tint = c.muted, modifier = Modifier.size(18.dp).padding(end = 2.dp))
+                    }
+                }
             }
         }
 

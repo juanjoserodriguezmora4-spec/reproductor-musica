@@ -4,6 +4,7 @@ import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
@@ -39,6 +40,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
@@ -54,6 +56,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -88,11 +91,11 @@ import com.bismopower.app.container
 import com.bismopower.app.player.PlayerConnection
 import com.bismopower.app.player.PlayerUiState
 import com.bismopower.app.ui.common.BI
+import com.bismopower.app.ui.common.Thumb
+import com.bismopower.app.ui.common.fmtDuration
 import com.bismopower.app.ui.sheets.LocalSheets
 import com.bismopower.app.ui.sheets.Sheet
 import com.bismopower.app.ui.sheets.sleepLabel
-import com.bismopower.app.ui.common.Thumb
-import com.bismopower.app.ui.common.fmtDuration
 import com.bismopower.app.ui.theme.LocalBismo
 import com.bismopower.app.ui.theme.LocalBismoDark
 import com.bismopower.app.ui.theme.LocalSolid
@@ -135,6 +138,7 @@ fun PlayerScreen(
     val density = LocalDensity.current
     val colors = rememberPlayerColors(s.artwork, s.artKey)
     var queueOpen by remember { mutableStateOf(false) }
+    var showLyrics by rememberSaveable { mutableStateOf(false) }
 
     // Íconos claros en la barra de estado mientras el reproductor está abierto.
     val view = LocalView.current
@@ -195,7 +199,15 @@ fun PlayerScreen(
                     .padding(horizontal = 20.dp, vertical = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                TopBar(s, sleepLabel(sleep), onClose = onClose, onQueue = { queueOpen = true })
+                TopBar(
+                    s,
+                    sleepLabel(sleep),
+                    lyricsOn = showLyrics,
+                    accent = colors.accent,
+                    onClose = onClose,
+                    onLyrics = { showLyrics = !showLyrics },
+                    onQueue = { queueOpen = true },
+                )
 
                 if (s.currentId == null) {
                     Spacer(Modifier.weight(1f))
@@ -207,17 +219,40 @@ fun PlayerScreen(
                 }
 
                 Spacer(Modifier.weight(0.5f))
-                SwipeArtwork(
-                    state = s,
-                    player = player,
-                    onDragDown = closeDrag,
-                    onDragDownEnd = closeEnd,
-                    onSwipeUp = { queueOpen = true },
+                // La carátula o la letra, en el mismo espacio.
+                Crossfade(
+                    showLyrics,
+                    animationSpec = tween(260),
+                    label = "lyrics",
                     modifier =
                         Modifier
-                            .weight(6f, fill = false)
-                            .aspectRatio(1f),
-                )
+                            .weight(6f)
+                            .fillMaxWidth(),
+                ) { lyrics ->
+                    if (lyrics) {
+                        LyricsView(
+                            trackId = s.currentId,
+                            positionMs = position,
+                            accent = colors.accent,
+                            onSeek = { ms ->
+                                player.seek(ms)
+                                position = ms
+                            },
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    } else {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            SwipeArtwork(
+                                state = s,
+                                player = player,
+                                onDragDown = closeDrag,
+                                onDragDownEnd = closeEnd,
+                                onSwipeUp = { queueOpen = true },
+                                modifier = Modifier.aspectRatio(1f),
+                            )
+                        }
+                    }
+                }
                 Spacer(Modifier.weight(0.5f))
 
                 TrackTitle(s)
@@ -365,7 +400,10 @@ private fun PlayerBackdrop(
 private fun TopBar(
     s: PlayerUiState,
     sleepText: String?,
+    lyricsOn: Boolean,
+    accent: Color,
     onClose: () -> Unit,
+    onLyrics: () -> Unit,
     onQueue: () -> Unit,
 ) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -382,6 +420,8 @@ private fun TopBar(
                 s.count > 1 -> Text("${s.index + 1} de ${s.count}", style = T.tiny, color = Color.White.copy(alpha = 0.6f))
             }
         }
+        RoundIcon(BI.Lyrics, if (lyricsOn) "Ver la carátula" else "Ver la letra", if (lyricsOn) accent else Color.White, onLyrics)
+        Spacer(Modifier.width(8.dp))
         RoundIcon(BI.Queue, "Abrir la cola", Color.White, onQueue)
     }
 }

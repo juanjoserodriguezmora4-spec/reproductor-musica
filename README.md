@@ -14,6 +14,8 @@ Reproductor de música local para Android con el diseño de vidrio esmerilado de
 
 - Listas de reproducción, favoritas, más escuchadas y escuchadas hace poco
 - Cola que se reordena arrastrando, temporizador para dormir y búsqueda
+- Sin pausas entre canciones o con fundido (crossfade) de 3, 6 o 10 segundos
+- Letras sincronizadas (.lrc o incluidas en la canción) y widget para la pantalla de inicio
 
 ## Descargar
 

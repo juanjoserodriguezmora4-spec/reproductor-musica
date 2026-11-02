@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Widget de BismoPower (4 × 1): carátula, canción y controles. Lo llena WidgetUpdater. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_bg"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingStart="8dp"
+    android:paddingTop="6dp"
+    android:paddingEnd="6dp"
+    android:paddingBottom="6dp">
+
+    <ImageView
+        android:id="@+id/widget_art"
+        android:layout_width="52dp"
+        android:layout_height="52dp"
+        android:background="@drawable/widget_art_bg"
+        android:clipToOutline="true"
+        android:contentDescription="@string/widget_art"
+        android:padding="14dp"
+        android:scaleType="centerCrop"
+        android:src="@drawable/widget_art_placeholder" />
+
+    <LinearLayout
+        android:id="@+id/widget_text"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="12dp"
+        android:layout_marginEnd="4dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/widget_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:fontFamily="sans-serif-medium"
+            android:singleLine="true"
+            android:text="@string/widget_idle_title"
+            android:textColor="#FFEEF1F8"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/widget_artist"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:ellipsize="end"
+            android:singleLine="true"
+            android:text="@string/widget_idle_artist"
+            android:textColor="#FF9AA3B5"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+    <ImageButton
+        android:id="@+id/widget_prev"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:background="@android:color/transparent"
+        android:contentDescription="@string/widget_prev"
+        android:scaleType="center"
+        android:src="@drawable/ic_widget_prev" />
+
+    <ImageButton
+        android:id="@+id/widget_play"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:layout_marginStart="2dp"
+        android:layout_marginEnd="2dp"
+        android:background="@drawable/widget_play_bg"
+        android:contentDescription="@string/widget_play"
+        android:scaleType="center"
+        android:src="@drawable/ic_widget_play" />
+
+    <ImageButton
+        android:id="@+id/widget_next"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:background="@android:color/transparent"
+        android:contentDescription="@string/widget_next"
+        android:scaleType="center"
+        android:src="@drawable/ic_widget_next" />
+</LinearLayout>

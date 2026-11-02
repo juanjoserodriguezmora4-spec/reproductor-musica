@@ -220,6 +220,9 @@ class PlayerConnection(
         }
     }
 
+    /** Da una orden directa al reproductor apenas esté conectado (la usa el widget). */
+    fun command(block: (MediaController) -> Unit) = withController(block)
+
     fun toggle() = withController { if (it.isPlaying) it.pause() else it.play() }
 
     fun pause() = withController { it.pause() }

@@ -5,6 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
@@ -23,6 +24,10 @@ data class AppSettings(
     /** true = solo se escanean las carpetas de [musicFolders] (y sus subcarpetas). */
     val onlyChosenFolders: Boolean = false,
     val musicFolders: Set<String> = emptySet(),
+    /** Segundos de fundido entre canciones; 0 = apagado (las canciones se unen sin pausas). */
+    val crossfadeSec: Int = 0,
+    /** Carpeta elegida por el usuario donde guarda sus archivos .lrc (dirección de Android). */
+    val lyricsFolder: String? = null,
 )
 
 class SettingsRepository(
@@ -35,6 +40,8 @@ class SettingsRepository(
         val COLOR_THEME = stringPreferencesKey("color_theme")
         val ONLY_CHOSEN_FOLDERS = booleanPreferencesKey("only_chosen_folders")
         val MUSIC_FOLDERS = stringSetPreferencesKey("music_folders")
+        val CROSSFADE_SEC = intPreferencesKey("crossfade_sec")
+        val LYRICS_FOLDER = stringPreferencesKey("lyrics_folder")
     }
 
     val flow: Flow<AppSettings> =
@@ -47,6 +54,8 @@ class SettingsRepository(
                 lastScanAt = p[LAST_SCAN_AT] ?: d.lastScanAt,
                 onlyChosenFolders = p[ONLY_CHOSEN_FOLDERS] ?: d.onlyChosenFolders,
                 musicFolders = p[MUSIC_FOLDERS] ?: d.musicFolders,
+                crossfadeSec = p[CROSSFADE_SEC] ?: d.crossfadeSec,
+                lyricsFolder = p[LYRICS_FOLDER]?.takeIf { it.isNotBlank() },
             )
         }
 

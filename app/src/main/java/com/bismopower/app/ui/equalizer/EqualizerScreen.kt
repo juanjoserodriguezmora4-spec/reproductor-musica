@@ -121,8 +121,8 @@ private fun glowFor(c: BismoColors): Color {
 /**
  * Pantalla del ecualizador, pensada como un equipo de sonido:
  *
- * - Pantalla oscura con la curva: arrastra un punto en cualquier dirección para cambiar
- *   frecuencia y ganancia a la vez. Arriba se leen los valores de la banda elegida.
+ * - Pantalla oscura con la curva: toca un punto para elegir esa banda (la curva solo se mira,
+ *   no se arrastra). Arriba se leen los valores de la banda elegida.
  * - Faders: arrastra hacia arriba o abajo; doble toque vuelve a 0.
  * - Perillas (editor de banda y tono): gira arrastrando hacia arriba o abajo; doble toque
  *   vuelve al valor normal.
@@ -190,8 +190,6 @@ fun EqualizerScreen() {
                     eq = shown,
                     selected = selected,
                     onSelect = { selected = it },
-                    onMove = { i, f, g -> repo.setBand(i) { it.copy(freq = f, gainDb = g) } },
-                    onTouching = { touching = it },
                 )
                 Spacer(Modifier.height(12.dp))
                 Row(
@@ -285,8 +283,6 @@ private fun Display(
     eq: EqSettings,
     selected: Int,
     onSelect: (Int) -> Unit,
-    onMove: (Int, Float, Float) -> Unit,
-    onTouching: (Boolean) -> Unit,
 ) {
     val c = LocalBismo.current
     val ink = inkFor(c)
@@ -296,8 +292,6 @@ private fun Display(
     val bands by rememberUpdatedState(eq.bands)
     val sel by rememberUpdatedState(selected)
     val select by rememberUpdatedState(onSelect)
-    val move by rememberUpdatedState(onMove)
-    val touch by rememberUpdatedState(onTouching)
     val labelStyle = NumSmall.copy(color = Color.White.copy(alpha = 0.45f), fontSize = 10.sp)
     val band = eq.bands.getOrNull(selected)
 
@@ -316,7 +310,7 @@ private fun Display(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (band == null) {
-                Text("Toca o arrastra un punto", style = T.small, color = Color.White.copy(alpha = 0.55f))
+                Text("Toca un punto para elegir la banda", style = T.small, color = Color.White.copy(alpha = 0.55f))
             } else {
                 Text("${fmtFreq(band.freq)}Hz", style = NumBig, color = Color.White)
                 Spacer(Modifier.width(14.dp))
@@ -336,35 +330,6 @@ private fun Display(
                         val i = nearestBand(bands, pos, size.width.toFloat(), plotHeight(size.height.toFloat()), maxDist = 40.dp.toPx())
                         select(if (i == sel) -1 else i)
                     }
-                }.pointerInput(Unit) {
-                    var index = -1
-                    detectDragGestures(
-                        onDragStart = { pos ->
-                            index = nearestBand(bands, pos, size.width.toFloat(), plotHeight(size.height.toFloat()), maxDist = 56.dp.toPx())
-                            if (index >= 0) {
-                                select(index)
-                                touch(true)
-                            }
-                        },
-                        onDrag = { change, _ ->
-                            if (index >= 0) {
-                                change.consume()
-                                val w = size.width.toFloat()
-                                val h = plotHeight(size.height.toFloat())
-                                val f = xToFreq(change.position.x, w).roundToInt().toFloat()
-                                val g = snapDb(yToDb(change.position.y, h))
-                                move(index, f, g)
-                            }
-                        },
-                        onDragEnd = {
-                            index = -1
-                            touch(false)
-                        },
-                        onDragCancel = {
-                            index = -1
-                            touch(false)
-                        },
-                    )
                 },
         ) {
             val w = size.width
@@ -834,11 +799,6 @@ private fun freqToX(
     w: Float,
 ): Float = freqToFraction(f) * w
 
-private fun xToFreq(
-    x: Float,
-    w: Float,
-): Float = fractionToFreq(x / w)
-
 /** Alto del área del gráfico: abajo quedan 20 dp para los números de frecuencia. */
 private fun androidx.compose.ui.unit.Density.plotHeight(total: Float): Float = total - 20.dp.toPx()
 
@@ -846,11 +806,6 @@ private fun dbToY(
     db: Float,
     h: Float,
 ): Float = h / 2f - db / RANGE_DB * (h / 2f)
-
-private fun yToDb(
-    y: Float,
-    h: Float,
-): Float = ((h / 2f - y) / (h / 2f) * RANGE_DB).coerceIn(-MAX_GAIN_DB, MAX_GAIN_DB)
 
 /** Redondea a pasos de medio dB, como los ecualizadores de los equipos de sonido. */
 private fun snapDb(db: Float): Float = (db.coerceIn(-MAX_GAIN_DB, MAX_GAIN_DB) * 2f).roundToInt() / 2f

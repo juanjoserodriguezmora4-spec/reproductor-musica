@@ -39,6 +39,11 @@ app/src/main/java/com/bismopower/app/
   library/PlaylistRepository  Listas, favoritas, conteo de reproducciones
   player/PlayCounter       Cuenta una reproducción a los 30 s (o la mitad si es más corta)
   player/SleepTimer        Temporizador con fundido de 20 s; también "al terminar la canción"
+  player/Crossfader        Fundido entre canciones con un segundo ExoPlayer (ver Fase 3)
+  library/LyricsParser     LRC + letras incluidas en el archivo (ID3 USLT, Vorbis LYRICS, M4A ©lyr)
+  library/LyricsRepository Busca la letra: .lrc al lado → carpeta de letras (SAF) → incluida
+  ui/player/LyricsView     Letra en el lugar de la carátula; la línea actual se ilumina
+  widget/                  Widget 4×1 (RemoteViews): PlayerWidget, WidgetUpdater, WidgetSync
   data/Settings.kt         DataStore: tema, color, reducir transparencia, carpetas de música
   data/db/BismoDatabase.kt Room: TrackEntity, consultas de álbumes/artistas/carpetas
   library/                 Escaneo de MediaStore → Room (filtrado por carpetas), permiso de audio, carátulas
@@ -167,6 +172,25 @@ Reglas:
 - 2c (hecha) Cola reordenable (asa ≡), temporizador para dormir y búsqueda en la
   Biblioteca (sin tildes, varias palabras a la vez: canciones, artistas y álbumes)
 - Pendiente del ecualizador: presets propios con nombre, onda real en el reproductor
+
+**Fase 3 (hecha)**
+- Ecualizador: la curva ya no se arrastra; tocar un punto solo elige la banda (se edita
+  con los faders y las perillas)
+- Gapless: lo hace ExoPlayer solo (lee los datos de relleno de MP3/M4A). No poner nada que
+  vacíe el AudioProcessor entre canciones
+- Crossfade (Ajustes → Reproducción: apagado, 3, 6 o 10 s): `Crossfader` crea un segundo
+  ExoPlayer con la siguiente canción, cruza volúmenes con curva de igual potencia y al final
+  el principal salta (seekTo) a esa canción en la misma posición. Se cancela al pausar,
+  saltar, mover la barra o cambiar la cola, y no se usa con el temporizador "al terminar la
+  canción". Cada reproductor necesita su propio `ParametricEq`: `AudioEffects.newProcessors()`
+- Widget 4×1: el servicio lo actualiza (`WidgetSync`); los botones mandan un broadcast a
+  `PlayerWidget`, que usa `PlayerConnection.command`. Sin cola, todo el widget abre la app
+- Letras: botón en la barra de arriba del reproductor. Android 11+ no deja leer .lrc sueltos,
+  por eso existe la "carpeta de letras" (OpenDocumentTree con permiso persistente)
+
+**Ideas para después**
+- Reanudar la última cola al abrir (onPlaybackResumption) y que el widget pueda arrancarla
+- Motor nativo (C++/Oboe), onda real en el reproductor, presets propios del ecualizador
 
 ## Compilar
 
