@@ -210,8 +210,10 @@ Reglas:
   (Anillo se quitó; un `vizStyle` desconocido cae en Halo). `VizFrame.slow` son las bandas
   muy suavizadas; `VizFrame.spin` es un ángulo que avanza más rápido con música fuerte (casi
   quieto en pausa). Línea = suma de 5 ondas suaves que viajan con `spin` (no la onda cruda).
-  Eclipse usa su propio arcoíris (no la paleta) que gira con `spin`, corona pegada al borde.
-  Aura = contorno de esfera + 4 cintas de 16 líneas en 3D + humo arriba con los agudos.
+  Eclipse usa su propio arcoíris (no la paleta) que gira despacio con `spin`, corona pegada al
+  borde que crece con las bandas, y luz blanca detrás del disco.
+  Aura = estilo NoCopyrightSounds: carátula en círculo (CoverMode.CIRCLE), 120 barras blancas
+  simétricas hacia afuera, resplandor blanco con los graves y partículas que se alejan con `spin`.
   Paletas: Carátula, Neón,
   Lavanda, Fuego, Aurora, Hielo, Atardecer, Blanco. Se guardan en Ajustes (`vizStyle`,
   `vizPalette`) igual que la vista del centro del reproductor (`playerView`: COVER/LYRICS/VIZ)

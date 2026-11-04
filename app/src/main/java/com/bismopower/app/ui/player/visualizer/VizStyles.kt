@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.dp
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.floor
 import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.sin
@@ -35,7 +36,7 @@ enum class VizStyle(
 ) {
     HALO("HALO", "Halo", CoverMode.CIRCLE, coverSize = 0.52f),
     ECLIPSE("ECLIPSE", "Eclipse", CoverMode.NONE),
-    AURA("AURA", "Aura", CoverMode.NONE),
+    AURA("AURA", "Aura", CoverMode.CIRCLE, coverSize = 0.44f),
     LINE("LINE", "Línea", CoverMode.SQUARE, coverSize = 1f, scrim = 0.35f),
     BARS("BARS", "Barras", CoverMode.SQUARE, coverSize = 1f, scrim = 0.45f),
     LED("LED", "LED", CoverMode.NONE),
@@ -349,7 +350,7 @@ private fun eclipseHue(
     a: Float,
     f: VizFrame,
     time: Float,
-): Float = a * 180f / PI.toFloat() + f.spin * 70f + 28f * sin(2f * a - time * 0.9f)
+): Float = a * 180f / PI.toFloat() + f.spin * 30f + 28f * sin(2f * a - time * 0.6f)
 
 private fun hueColor(
     hue: Float,
@@ -369,41 +370,59 @@ private fun DrawScope.eclipse(
 ) {
     val m = min(size.width, size.height)
     val r0 = m * 0.3f
+    val bass = f.energy
+    // 0) Luz blanca detrás del disco, como la corona de un eclipse de verdad; crece con los graves.
+    val back = min(m / 2f, r0 * (1.9f + bass * 0.3f))
+    val white = (0.6f + bass * 0.3f).coerceAtMost(1f)
+    drawCircle(
+        Brush.radialGradient(
+            0f to Color.White.copy(alpha = white),
+            r0 / back to Color.White.copy(alpha = white),
+            (r0 * 1.15f) / back to Color.White.copy(alpha = white * 0.6f),
+            (r0 * 1.4f) / back to Color.White.copy(alpha = white * 0.18f),
+            1f to Color.White.copy(alpha = 0f),
+            center = center,
+            radius = back,
+        ),
+        radius = back,
+    )
     // 1) Corona: muchos anillos finos del mismo degradado, más densos cerca del borde.
     val stops = Array(25) { i -> i / 24f to hueColor(eclipseHue(TWO_PI * i / 24f, f, time), 0.9f) }
     val ring = Brush.sweepGradient(*stops, center = center)
-    val glow = (0.1f * (0.75f + f.energy * 0.5f)).coerceAtMost(1f)
+    val glow = (0.1f * (0.75f + bass * 0.9f)).coerceAtMost(1f)
     for (k in 1..14) {
-        val e = r0 * 0.4f * (k / 14f).pow(1.6f)
+        val e = r0 * (0.4f + bass * 0.3f) * (k / 14f).pow(1.6f)
         drawCircle(ring, radius = r0, style = Stroke(e * 2f), alpha = glow)
     }
     // 2) Manchas de luz que crecen con la música y viajan alrededor.
     val n = 40
     for (i in 0 until n) {
         val a = TWO_PI * i / n
-        val turned = ((a + f.spin * 0.8f) % TWO_PI + TWO_PI) % TWO_PI
+        val turned = ((a + f.spin * 0.35f) % TWO_PI + TWO_PI) % TWO_PI
         val v = f.bands.sample(0.03f + abs(turned / PI.toFloat() - 1f) * 0.75f)
-        val reach = r0 * (0.1f + v * 0.42f)
+        val reach = r0 * (0.1f + v * 0.5f + bass * 0.1f)
         val c = hueColor(eclipseHue(a, f, time), 0.85f)
         val p = Offset(center.x + cos(a) * (r0 + reach * 0.25f), center.y + sin(a) * (r0 + reach * 0.25f))
         drawCircle(
-            Brush.radialGradient(listOf(c.copy(alpha = (0.55f * v + 0.1f).coerceAtMost(1f)), c.copy(alpha = 0f)), center = p, radius = reach),
+            Brush.radialGradient(listOf(c.copy(alpha = (0.65f * v + 0.1f).coerceAtMost(1f)), c.copy(alpha = 0f)), center = p, radius = reach),
             radius = reach,
             center = p,
         )
     }
     // 3) Borde blanco caliente que late con los graves.
-    drawCircle(Color.White, radius = r0 + 1.5.dp.toPx(), style = Stroke(7.dp.toPx()), alpha = (0.22f + f.energy * 0.25f).coerceAtMost(1f))
-    drawCircle(Color.White, radius = r0 + 0.5.dp.toPx(), style = Stroke((1.4f + f.energy * 2f).dp.toPx()), alpha = 0.85f)
+    drawCircle(Color.White, radius = r0 + 1.5.dp.toPx(), style = Stroke(7.dp.toPx()), alpha = (0.22f + bass * 0.35f).coerceAtMost(1f))
+    drawCircle(Color.White, radius = r0 + 0.5.dp.toPx(), style = Stroke((1.4f + bass * 2.5f).dp.toPx()), alpha = 0.85f)
     drawCircle(Color(0xFF030407), radius = r0)
 }
 
 // ---------------------------------------------------------------- Aura
 
+private fun fract(x: Float): Float = x - floor(x)
+
 /**
- * Esfera de luz: un contorno brillante con cintas hechas de muchas líneas finas que se tuercen
- * y giran por dentro, y humo que sube por arriba con los agudos. Colores de abajo (primero de la
- * paleta) hacia arriba.
+ * Estilo de los videos de NoCopyrightSounds: la carátula en un círculo y alrededor barras de
+ * luz blanca que salen hacia afuera (iguales a izquierda y derecha), un resplandor que crece con
+ * los graves y partículas que se alejan más rápido cuando la música está fuerte.
  */
 private fun DrawScope.aura(
     f: VizFrame,
@@ -411,106 +430,63 @@ private fun DrawScope.aura(
     time: Float,
 ) {
     val m = min(size.width, size.height)
-    val cx = center.x
-    val cy = center.y + m * 0.07f
-    val r = m * 0.3f
-    val spin = f.spin
-    var treble = 0f
-    for (i in 36 until 60) treble += f.bands[i]
-    treble /= 24f
+    val r0 = m * VizStyle.AURA.coverSize / 2f + 3.dp.toPx()
+    val room = m / 2f - r0 - 4.dp.toPx()
     val bass = f.energy
-    val body =
-        Brush.verticalGradient(
-            0f to colors.at(0.75f).copy(alpha = 0.6f),
-            0.45f to colors.at(0.45f),
-            1f to colors.at(0f),
-            startY = cy - r * 1.9f,
-            endY = cy + r,
-        )
-    val rim = r * (1f + bass * 0.04f)
-    for ((w, a) in listOf(8f to 0.08f, 3f to 0.25f, 1f to 0.8f)) {
-        drawCircle(body, radius = rim, center = Offset(cx, cy), style = Stroke(w.dp.toPx()), alpha = a)
-    }
+    val tint = colors.at(0.5f)
 
-    // Cintas: cada una es un trozo de círculo sobre la esfera, inclinado en 3D, hecho de 16
-    // líneas paralelas; el ancho se tuerce a lo largo y todo gira con la música.
-    val path = Path()
-    val thin = Stroke(0.7.dp.toPx())
-    val lines = 16
-    val pts = 80
-    for (s in 0 until 4) {
-        val yaw = spin * (0.35f + s * 0.12f) + s * 1.6f
-        val pitch = sin(time * 0.3f + s * 2.1f) * 1.1f + s * 0.7f
-        val cyw = cos(yaw)
-        val syw = sin(yaw)
-        val cp = cos(pitch)
-        val sp = sin(pitch)
-        val start = spin * (0.5f + s * 0.2f) + s * 2f
-        val span = PI.toFloat() * (1.1f + 0.35f * sin(time * 0.5f + s))
-        for (k in 0 until lines) {
-            path.reset()
-            for (j in 0..pts) {
-                val ph = start + span * j / pts
-                val v = f.slow.sample(0.04f + abs(sin(ph)) * 0.6f)
-                val twist = cos(ph * 1.5f + time * 0.8f + s)
-                val d = (k / (lines - 1f) - 0.5f) * 0.55f * twist + 0.28f * sin(3 * ph + time * 1.2f + s * 1.9f)
-                val rr = r * (1f + 0.1f * v * sin(3 * ph + spin * 2f + s) + 0.05f * sin(5 * ph - time))
-                val x = cos(ph) * cos(d)
-                val y = sin(ph) * cos(d)
-                val z = sin(d)
-                val y2 = y * cp - z * sp
-                val z2 = y * sp + z * cp
-                val px = cx + (x * cyw + z2 * syw) * rr
-                val py = cy + y2 * rr
-                if (j == 0) path.moveTo(px, py) else path.lineTo(px, py)
-            }
-            drawPath(path, body, alpha = 0.28f, style = thin)
-        }
-    }
+    // Resplandor blanco alrededor de la carátula (transparente por dentro para no taparla).
+    val glowR = r0 + room * (0.55f + bass * 0.45f)
+    val glowA = (0.25f + bass * 0.45f).coerceAtMost(1f)
+    drawCircle(
+        Brush.radialGradient(
+            0f to Color.Transparent,
+            (r0 - 1f) / glowR to Color.Transparent,
+            r0 / glowR to Color.White.copy(alpha = glowA),
+            1f to tint.copy(alpha = 0f),
+            center = center,
+            radius = glowR,
+        ),
+        radius = glowR,
+    )
 
-    // Base brillante abajo.
-    val base = colors.at(0f)
-    for ((w, a) in listOf(12f to 0.12f, 4f to 0.35f, 1.6f to 0.9f)) {
-        drawArc(
-            base,
-            startAngle = 27f,
-            sweepAngle = 126f,
-            useCenter = false,
-            topLeft = Offset(cx - rim, cy - rim),
-            size = Size(rim * 2f, rim * 2f),
-            alpha = a,
-            style = Stroke(w.dp.toPx(), cap = StrokeCap.Round),
+    // Partículas que salen del centro y se desvanecen.
+    for (i in 0 until 46) {
+        val h1 = fract(sin(i * 12.9898f) * 43758.547f)
+        val h2 = fract(sin(i * 78.233f) * 12543.12f)
+        val a = h1 * TWO_PI + time * 0.05f
+        val prog = fract(f.spin * 0.07f * (0.5f + h2) + h2)
+        val rr = r0 + prog * (m / 2f - r0)
+        val alpha = ((1f - prog) * min(1f, prog * 6f) * 0.8f).coerceIn(0f, 1f)
+        drawCircle(
+            Color.White,
+            radius = (0.7f + h2 * 1.5f).dp.toPx(),
+            center = Offset(center.x + cos(a) * rr, center.y + sin(a) * rr),
+            alpha = alpha,
         )
     }
 
-    // Humo: abanicos de líneas que suben ondulando desde la parte de arriba.
-    val smokeLine = Stroke(0.6.dp.toPx())
-    val plumes = 6
-    for (q in 0 until plumes) {
-        val th = -1.15f + 2.3f * q / (plumes - 1) + 0.12f * sin(time * 0.4f + q)
-        val bx = cx + sin(th) * r * 0.95f
-        val by = cy - cos(th) * r * 0.95f
-        val h = r * (0.45f + treble * 1.3f + bass * 0.35f) * (0.6f + 0.4f * sin(time * 1.3f + q * 1.9f))
-        val lean = sin(th) * 0.6f
-        val smoke =
-            Brush.verticalGradient(
-                0f to colors.at(0.5f).copy(alpha = 0.5f),
-                0.5f to colors.at(0.7f).copy(alpha = 0.3f),
-                1f to colors.at(0.85f).copy(alpha = 0f),
-                startY = by,
-                endY = by - h,
-            )
-        for (j in 0 until 14) {
-            path.reset()
-            for (i in 0..34) {
-                val u = i / 34f
-                val x = bx + sin(u * 3.5f + time * 2.4f + q * 1.3f + j * 0.1f) * u * r * 0.32f + (j - 6.5f) * u * r * 0.045f + lean * u * u * r * 0.45f
-                val y = by - u * h
-                if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
-            }
-            drawPath(path, smoke, alpha = 0.55f, style = smokeLine)
-        }
+    // Barras blancas, simétricas (graves arriba, agudos abajo a los dos lados).
+    val n = 120
+    val barW = TWO_PI * r0 / n * 0.55f
+    for (i in 0 until n) {
+        val half = if (i < n / 2) i else n - 1 - i
+        val t = half / (n / 2 - 1f)
+        val v = f.bands.sample(0.02f + t * 0.7f)
+        val len = 2.dp.toPx() + v.pow(1.2f) * room * 0.85f
+        val a = -PI.toFloat() / 2f + TWO_PI * i / n
+        val ca = cos(a)
+        val sa = sin(a)
+        val from = Offset(center.x + ca * (r0 + 2.dp.toPx()), center.y + sa * (r0 + 2.dp.toPx()))
+        val to = Offset(center.x + ca * (r0 + 2.dp.toPx() + len), center.y + sa * (r0 + 2.dp.toPx() + len))
+        drawLine(tint, from, to, strokeWidth = barW * 5f, alpha = 0.06f, cap = StrokeCap.Round)
+        drawLine(Color.White, from, to, strokeWidth = barW * 2.4f, alpha = 0.16f, cap = StrokeCap.Round)
+        drawLine(Color.White, from, to, strokeWidth = barW, cap = StrokeCap.Round)
     }
+
+    // Aro blanco pegado a la carátula, que late con los graves.
+    drawCircle(Color.White, radius = r0, style = Stroke(9.dp.toPx()), alpha = (0.12f + bass * 0.3f).coerceAtMost(1f))
+    drawCircle(Color.White, radius = r0, style = Stroke(2.dp.toPx()), alpha = 0.95f)
 }
 
 // ---------------------------------------------------------------- Brillo
