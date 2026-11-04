@@ -170,8 +170,9 @@ private fun DrawScope.halo(
 
 /**
  * Una línea de luz que cruza la carátula y ondula con la música.
- * No dibuja la onda cruda (cambia demasiado rápido): suma unas pocas ondas suaves cuyo tamaño
- * sigue a los graves, medios y agudos ya suavizados, y que se desplazan despacio.
+ * No dibuja la onda cruda (tiembla demasiado): suma cinco ondas suaves cuyo tamaño sigue a
+ * graves, medios y agudos, y que viajan en sentidos opuestos a la velocidad de [VizFrame.spin]
+ * (más rápido cuando la música está fuerte).
  */
 private fun DrawScope.line(
     f: VizFrame,
@@ -182,19 +183,28 @@ private fun DrawScope.line(
     val left = center.x - side / 2f + 10.dp.toPx()
     val width = side - 20.dp.toPx()
     val groups = 5
-    val amps = FloatArray(groups) { g -> (0 until 8).map { f.slow.sample((g * 8 + it) / 44f) }.average().toFloat() }
-    val n = 96
+    val amps =
+        FloatArray(groups) { g ->
+            var sum = 0f
+            for (j in 0 until 8) {
+                val t = (g * 8 + j) / 44f
+                sum += 0.65f * f.bands.sample(t) + 0.35f * f.slow.sample(t)
+            }
+            sum / 8f
+        }
+    val n = 120
     val path = Path()
     for (i in 0 until n) {
         val t = i / (n - 1f)
-        val taper = sin(PI * t).toFloat().pow(0.8f) // quieta en las puntas, viva en el centro
+        val taper = sin(PI * t).toFloat().pow(0.7f) // quieta en las puntas, viva en el centro
         var y = 0f
         for (g in 0 until groups) {
-            val cycles = 1.2f + g * 0.9f
-            y += amps[g] * sin(2f * PI.toFloat() * t * cycles + time * (0.5f + g * 0.3f) + g) / groups
+            val dir = if (g % 2 == 0) 1f else -1f
+            y += amps[g] * sin(2f * PI.toFloat() * t * (1.5f + g * 1.1f) + dir * f.spin * (1.6f + g * 0.6f) + g * 1.7f)
         }
+        y /= groups * 0.55f
         val x = left + t * width
-        val py = center.y + y * side * 0.42f * taper
+        val py = center.y + y * side * 0.3f * taper
         if (i == 0) path.moveTo(x, py) else path.lineTo(x, py)
     }
     val brush = Brush.horizontalGradient(colors, startX = left, endX = left + width)
@@ -332,39 +342,68 @@ private val NOISE = FloatArray(64) { i -> ((sin(i * 12.9898f) * 43758.547f) % 1f
 
 // ---------------------------------------------------------------- Eclipse
 
-/** Disco negro con una corona de luz de colores que crece con la música, como un eclipse. */
+private const val TWO_PI = 6.2831855f
+
+/** Tono (en grados) de la corona del eclipse en el ángulo [a]: da la vuelta con [VizFrame.spin]. */
+private fun eclipseHue(
+    a: Float,
+    f: VizFrame,
+    time: Float,
+): Float = a * 180f / PI.toFloat() + f.spin * 70f + 28f * sin(2f * a - time * 0.9f)
+
+private fun hueColor(
+    hue: Float,
+    saturation: Float,
+): Color = Color.hsv(((hue % 360f) + 360f) % 360f, saturation, 1f)
+
+/**
+ * Disco negro con una corona de arcoíris pegada al borde, como un eclipse. Los colores giran
+ * alrededor (más rápido cuando la música está fuerte) y brillan más donde empujan las bandas.
+ * Usa su propio arcoíris: no depende de la paleta.
+ */
+@Suppress("UNUSED_PARAMETER")
 private fun DrawScope.eclipse(
     f: VizFrame,
     colors: List<Color>,
     time: Float,
 ) {
     val m = min(size.width, size.height)
-    val r0 = m * 0.27f
-    val n = 64
+    val r0 = m * 0.3f
+    // 1) Corona: muchos anillos finos del mismo degradado, más densos cerca del borde.
+    val stops = Array(25) { i -> i / 24f to hueColor(eclipseHue(TWO_PI * i / 24f, f, time), 0.9f) }
+    val ring = Brush.sweepGradient(*stops, center = center)
+    val glow = (0.1f * (0.75f + f.energy * 0.5f)).coerceAtMost(1f)
+    for (k in 1..14) {
+        val e = r0 * 0.4f * (k / 14f).pow(1.6f)
+        drawCircle(ring, radius = r0, style = Stroke(e * 2f), alpha = glow)
+    }
+    // 2) Manchas de luz que crecen con la música y viajan alrededor.
+    val n = 40
     for (i in 0 until n) {
-        val a = (2 * PI * i / n).toFloat()
-        val mirror = abs(a / PI.toFloat() - 1f) // simétrico de izquierda a derecha
-        val v = f.slow.sample(0.04f + mirror * 0.8f)
-        // Los colores dan la vuelta despacio alrededor del disco.
-        val color = colors.at(sin(a + time * 0.35f) * 0.5f + 0.5f)
-        val reach = r0 * (0.22f + v * 0.6f + f.energy * 0.15f)
-        val p = Offset(center.x + cos(a) * (r0 + reach * 0.15f), center.y + sin(a) * (r0 + reach * 0.15f))
+        val a = TWO_PI * i / n
+        val turned = ((a + f.spin * 0.8f) % TWO_PI + TWO_PI) % TWO_PI
+        val v = f.bands.sample(0.03f + abs(turned / PI.toFloat() - 1f) * 0.75f)
+        val reach = r0 * (0.1f + v * 0.42f)
+        val c = hueColor(eclipseHue(a, f, time), 0.85f)
+        val p = Offset(center.x + cos(a) * (r0 + reach * 0.25f), center.y + sin(a) * (r0 + reach * 0.25f))
         drawCircle(
-            Brush.radialGradient(listOf(color.copy(alpha = 0.5f), color.copy(alpha = 0f)), center = p, radius = reach),
+            Brush.radialGradient(listOf(c.copy(alpha = (0.55f * v + 0.1f).coerceAtMost(1f)), c.copy(alpha = 0f)), center = p, radius = reach),
             radius = reach,
             center = p,
         )
     }
-    drawCircle(sweep(colors), radius = r0 + 1.dp.toPx(), style = Stroke(3.dp.toPx()), alpha = 0.9f)
-    drawCircle(Color.White, radius = r0 + 0.5.dp.toPx(), style = Stroke(1.dp.toPx()), alpha = 0.5f)
-    drawCircle(Color(0xFF040509), radius = r0)
+    // 3) Borde blanco caliente que late con los graves.
+    drawCircle(Color.White, radius = r0 + 1.5.dp.toPx(), style = Stroke(7.dp.toPx()), alpha = (0.22f + f.energy * 0.25f).coerceAtMost(1f))
+    drawCircle(Color.White, radius = r0 + 0.5.dp.toPx(), style = Stroke((1.4f + f.energy * 2f).dp.toPx()), alpha = 0.85f)
+    drawCircle(Color(0xFF030407), radius = r0)
 }
 
 // ---------------------------------------------------------------- Aura
 
 /**
- * Esfera hecha de muchas cintas finas que giran y se deforman con la música; arriba salen
- * llamas cuando suben los agudos. Colores de abajo (primero de la paleta) hacia arriba.
+ * Esfera de luz: un contorno brillante con cintas hechas de muchas líneas finas que se tuercen
+ * y giran por dentro, y humo que sube por arriba con los agudos. Colores de abajo (primero de la
+ * paleta) hacia arriba.
  */
 private fun DrawScope.aura(
     f: VizFrame,
@@ -372,41 +411,105 @@ private fun DrawScope.aura(
     time: Float,
 ) {
     val m = min(size.width, size.height)
-    val r = m * 0.29f
-    val ribbons = 26
-    val pts = 90
-    val brush =
+    val cx = center.x
+    val cy = center.y + m * 0.07f
+    val r = m * 0.3f
+    val spin = f.spin
+    var treble = 0f
+    for (i in 36 until 60) treble += f.bands[i]
+    treble /= 24f
+    val bass = f.energy
+    val body =
         Brush.verticalGradient(
-            listOf(colors.at(0.75f), colors.at(0.5f), colors.at(0.15f), colors.at(0f)),
-            startY = center.y - r * 1.6f,
-            endY = center.y + r * 1.15f,
+            0f to colors.at(0.75f).copy(alpha = 0.6f),
+            0.45f to colors.at(0.45f),
+            1f to colors.at(0f),
+            startY = cy - r * 1.9f,
+            endY = cy + r,
         )
-    val spin = time * 0.25f
-    val treble = (40 until 60).map { f.bands[it] }.average().toFloat()
+    val rim = r * (1f + bass * 0.04f)
+    for ((w, a) in listOf(8f to 0.08f, 3f to 0.25f, 1f to 0.8f)) {
+        drawCircle(body, radius = rim, center = Offset(cx, cy), style = Stroke(w.dp.toPx()), alpha = a)
+    }
+
+    // Cintas: cada una es un trozo de círculo sobre la esfera, inclinado en 3D, hecho de 16
+    // líneas paralelas; el ancho se tuerce a lo largo y todo gira con la música.
     val path = Path()
-    for (k in 0 until ribbons) {
-        val tilt = (k / ribbons.toFloat()) * PI.toFloat()
-        path.reset()
-        for (j in 0..pts) {
-            val th = (2 * PI * j / pts).toFloat()
-            val v = f.slow.sample(0.05f + abs(th / PI.toFloat() - 1f) * 0.7f)
-            val wob = sin(3 * th + time * 0.9f + k * 0.22f) * 0.06f + sin(5 * th - time * 0.6f + k * 0.13f) * 0.04f
-            val bulge = sin(2 * th + time * 0.5f + k * 0.3f)
-            val rr = r * (1f + wob + v * 0.35f * bulge * bulge)
-            // Círculo inclinado en 3D que gira alrededor del eje vertical.
-            val x3 = rr * cos(th)
-            val y3 = rr * sin(th) * cos(tilt)
-            val z3 = rr * sin(th) * sin(tilt)
-            val x = x3 * cos(spin) + z3 * sin(spin)
-            // Llamas: la parte de arriba se estira hacia arriba con los agudos.
-            val up = (-y3 / r).coerceAtLeast(0f)
-            val flame = up * up * up * (treble * 0.9f + v * 0.3f) * r
-            val px = center.x + x
-            val py = center.y + y3 - flame
-            if (j == 0) path.moveTo(px, py) else path.lineTo(px, py)
+    val thin = Stroke(0.7.dp.toPx())
+    val lines = 16
+    val pts = 80
+    for (s in 0 until 4) {
+        val yaw = spin * (0.35f + s * 0.12f) + s * 1.6f
+        val pitch = sin(time * 0.3f + s * 2.1f) * 1.1f + s * 0.7f
+        val cyw = cos(yaw)
+        val syw = sin(yaw)
+        val cp = cos(pitch)
+        val sp = sin(pitch)
+        val start = spin * (0.5f + s * 0.2f) + s * 2f
+        val span = PI.toFloat() * (1.1f + 0.35f * sin(time * 0.5f + s))
+        for (k in 0 until lines) {
+            path.reset()
+            for (j in 0..pts) {
+                val ph = start + span * j / pts
+                val v = f.slow.sample(0.04f + abs(sin(ph)) * 0.6f)
+                val twist = cos(ph * 1.5f + time * 0.8f + s)
+                val d = (k / (lines - 1f) - 0.5f) * 0.55f * twist + 0.28f * sin(3 * ph + time * 1.2f + s * 1.9f)
+                val rr = r * (1f + 0.1f * v * sin(3 * ph + spin * 2f + s) + 0.05f * sin(5 * ph - time))
+                val x = cos(ph) * cos(d)
+                val y = sin(ph) * cos(d)
+                val z = sin(d)
+                val y2 = y * cp - z * sp
+                val z2 = y * sp + z * cp
+                val px = cx + (x * cyw + z2 * syw) * rr
+                val py = cy + y2 * rr
+                if (j == 0) path.moveTo(px, py) else path.lineTo(px, py)
+            }
+            drawPath(path, body, alpha = 0.28f, style = thin)
         }
-        drawPath(path, brush, alpha = 0.06f, style = Stroke(4.dp.toPx()))
-        drawPath(path, brush, alpha = 0.4f, style = Stroke(0.9.dp.toPx()))
+    }
+
+    // Base brillante abajo.
+    val base = colors.at(0f)
+    for ((w, a) in listOf(12f to 0.12f, 4f to 0.35f, 1.6f to 0.9f)) {
+        drawArc(
+            base,
+            startAngle = 27f,
+            sweepAngle = 126f,
+            useCenter = false,
+            topLeft = Offset(cx - rim, cy - rim),
+            size = Size(rim * 2f, rim * 2f),
+            alpha = a,
+            style = Stroke(w.dp.toPx(), cap = StrokeCap.Round),
+        )
+    }
+
+    // Humo: abanicos de líneas que suben ondulando desde la parte de arriba.
+    val smokeLine = Stroke(0.6.dp.toPx())
+    val plumes = 6
+    for (q in 0 until plumes) {
+        val th = -1.15f + 2.3f * q / (plumes - 1) + 0.12f * sin(time * 0.4f + q)
+        val bx = cx + sin(th) * r * 0.95f
+        val by = cy - cos(th) * r * 0.95f
+        val h = r * (0.45f + treble * 1.3f + bass * 0.35f) * (0.6f + 0.4f * sin(time * 1.3f + q * 1.9f))
+        val lean = sin(th) * 0.6f
+        val smoke =
+            Brush.verticalGradient(
+                0f to colors.at(0.5f).copy(alpha = 0.5f),
+                0.5f to colors.at(0.7f).copy(alpha = 0.3f),
+                1f to colors.at(0.85f).copy(alpha = 0f),
+                startY = by,
+                endY = by - h,
+            )
+        for (j in 0 until 14) {
+            path.reset()
+            for (i in 0..34) {
+                val u = i / 34f
+                val x = bx + sin(u * 3.5f + time * 2.4f + q * 1.3f + j * 0.1f) * u * r * 0.32f + (j - 6.5f) * u * r * 0.045f + lean * u * u * r * 0.45f
+                val y = by - u * h
+                if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            }
+            drawPath(path, smoke, alpha = 0.55f, style = smokeLine)
+        }
     }
 }
 

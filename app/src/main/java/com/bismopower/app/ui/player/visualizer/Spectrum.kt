@@ -32,6 +32,12 @@ interface VizFrame {
 
     /** Fuerza de los graves (para que la carátula "lata"). */
     val energy: Float
+
+    /**
+     * Ángulo que avanza siempre (en radianes): más rápido cuando la música está fuerte y casi
+     * quieto en pausa. Lo usan los estilos que giran (Eclipse, Aura, Línea).
+     */
+    val spin: Float
 }
 
 /**
@@ -52,6 +58,8 @@ class Spectrum(
     private var sinceHistory = 0.0
     override val historySize = HISTORY
     override var energy = 0f
+        private set
+    override var spin = 0f
         private set
 
     /** Qué tanto se mueve todo; cuando llega a casi 0 con la música en pausa, se puede dejar de dibujar. */
@@ -110,6 +118,8 @@ class Spectrum(
         var bass = 0f
         for (i in 0 until 8) bass += bands[i]
         energy += (bass / 8f - energy) * min(1.0, dt * 12).toFloat()
+        val speed = if (active) 0.6f + energy * 2.6f else 0.12f
+        spin += dt.toFloat() * speed
 
         // Onda: las últimas 1024 muestras reducidas a WAVE puntos, con volumen automático.
         var peakAbs = 0f
@@ -232,4 +242,5 @@ object PreviewFrame : VizFrame {
 
     override val historySize = Spectrum.HISTORY
     override val energy = 0.6f
+    override val spin = 1.3f
 }

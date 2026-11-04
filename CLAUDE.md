@@ -208,8 +208,11 @@ Reglas:
   El reproductor del fundido no alimenta el analizador (`newProcessors(analyze = false)`)
 - Estilos: Halo, Eclipse, Aura, Línea, Barras, LED, Pulso, Cordillera, Brillo, Espejo
   (Anillo se quitó; un `vizStyle` desconocido cae en Halo). `VizFrame.slow` son las bandas
-  muy suavizadas: las usan Línea (suma de 5 ondas suaves, ya no la onda cruda), Eclipse y Aura
-  para moverse con calma. Paletas: Carátula, Neón,
+  muy suavizadas; `VizFrame.spin` es un ángulo que avanza más rápido con música fuerte (casi
+  quieto en pausa). Línea = suma de 5 ondas suaves que viajan con `spin` (no la onda cruda).
+  Eclipse usa su propio arcoíris (no la paleta) que gira con `spin`, corona pegada al borde.
+  Aura = contorno de esfera + 4 cintas de 16 líneas en 3D + humo arriba con los agudos.
+  Paletas: Carátula, Neón,
   Lavanda, Fuego, Aurora, Hielo, Atardecer, Blanco. Se guardan en Ajustes (`vizStyle`,
   `vizPalette`) igual que la vista del centro del reproductor (`playerView`: COVER/LYRICS/VIZ)
 - En el visualizador: deslizar a los lados cambia de estilo, un toque pausa, el botón de la
