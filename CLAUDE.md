@@ -208,7 +208,7 @@ Reglas:
   El audio suena ~280 ms después de procesarse (`AudioAnalyzer.LATENCY_MS`); `Spectrum`
   mueve un "cabezal" a ritmo real y lo corrige hacia ese punto para que se vea suave.
   El reproductor del fundido no alimenta el analizador (`newProcessors(analyze = false)`)
-- Estilos: Halo, Eclipse, Aura, Línea, Barras, LED, Pulso, Cordillera, Brillo, Espejo
+- Estilos: Halo, Eclipse, Prisma, Aura, Línea, Barras, LED, Pulso, Cordillera, Brillo, Espejo
   (Anillo se quitó; un `vizStyle` desconocido cae en Halo). `VizFrame.slow` son las bandas
   muy suavizadas; `VizFrame.spin` es un ángulo que avanza más rápido con música fuerte (casi
   quieto en pausa). Línea dibuja la onda (`wave`) tal cual, como la primera versión (así
@@ -216,6 +216,10 @@ Reglas:
   Eclipse = luz real alrededor de un disco negro: se pinta en una capa (`saveLayer`) con los
   colores de la paleta alrededor + núcleo blanco, y una máscara radial `BlendMode.DstIn` hecha
   con la suma de 4 caídas exponenciales (fuerte en el borde, cola larga hasta el fondo).
+  Prisma = como Eclipse pero con 6 focos de color separados (azul, rosado, verde, rojo, blanco,
+  morado; no usa la paleta) que giran despacio (`time·0.2`). Cada foco escucha un grupo de
+  bandas (`PRISM_LIGHTS`) y el blanco además el golpe del bombo. Capa: anillo de colores
+  mezclados por cercanía + focos con `BlendMode.Plus` + filo blanco + la misma máscara radial.
   Aura = estilo NoCopyrightSounds: carátula en círculo (CoverMode.CIRCLE), 120 barras blancas
   simétricas hacia afuera. `whiteGlow()` y `particles()` (resplandor blanco con los graves y
   partículas que se alejan con `spin`) se comparten: Aura usa `whiteGlow`, Halo usa

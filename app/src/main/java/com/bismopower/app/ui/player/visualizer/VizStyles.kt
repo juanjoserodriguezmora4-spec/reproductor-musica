@@ -41,6 +41,7 @@ enum class VizStyle(
 ) {
     HALO("HALO", "Halo", CoverMode.CIRCLE, coverSize = 0.52f),
     ECLIPSE("ECLIPSE", "Eclipse", CoverMode.NONE),
+    PRISM("PRISM", "Prisma", CoverMode.NONE),
     AURA("AURA", "Aura", CoverMode.CIRCLE, coverSize = 0.44f),
     LINE("LINE", "Línea", CoverMode.SQUARE, coverSize = 1f, scrim = 0.35f),
     BARS("BARS", "Barras", CoverMode.SQUARE, coverSize = 1f, scrim = 0.45f),
@@ -157,6 +158,7 @@ fun DrawScope.drawViz(
     when (style) {
         VizStyle.HALO -> halo(f, colors, time)
         VizStyle.ECLIPSE -> eclipse(f, colors, time)
+        VizStyle.PRISM -> prism(f, time)
         VizStyle.AURA -> aura(f, colors, time)
         VizStyle.LINE -> line(f, colors)
         VizStyle.BARS -> bars(f, colors)
@@ -443,6 +445,140 @@ private fun DrawScope.eclipse(
     drawIntoCanvas { it.restore() }
 
     particles(r0, f, time, alpha = 0.55f, dotSize = 0.8f)
+    drawCircle(Color(0xFF020306), radius = r0)
+}
+
+// ---------------------------------------------------------------- Prisma
+
+/** Las 6 luces del Prisma: color, ángulo donde empiezan (grados) y qué parte de la música escuchan. */
+private class PrismLight(
+    val color: Color,
+    val angle: Float,
+    val from: Int,
+    val to: Int,
+    val gain: Float,
+    /** true = además sigue los golpes del bombo (la luz blanca). */
+    val kick: Boolean = false,
+)
+
+private val PRISM_LIGHTS =
+    listOf(
+        PrismLight(Color(0xFF3C78FF), 180f, 4, 10, 1.1f), // azul: graves altos
+        PrismLight(Color(0xFFFF3C6E), 245f, 40, 56, 2.6f), // rosado: agudos
+        PrismLight(Color(0xFF28E678), 300f, 28, 40, 2.1f), // verde: medios altos
+        PrismLight(Color(0xFFFF4628), 345f, 18, 28, 1.6f), // rojo: voces
+        PrismLight(Color.White, 35f, 0, 4, 1f, kick = true), // blanco: bombo y bajos
+        PrismLight(Color(0xFFC83CFF), 105f, 10, 18, 1.3f), // morado: medios bajos
+    ).map { PrismLight(lerp(it.color, Color.White, 0.08f), it.angle, it.from, it.to, it.gain, it.kick) }
+
+/**
+ * Como el Eclipse, pero la luz de atrás son 6 focos de colores separados (siempre con blanco)
+ * que giran despacio. Cada foco escucha una parte de la música y brilla y se estira con ella;
+ * el blanco sigue los golpes del bombo. Usa sus propios colores, no la paleta.
+ */
+private fun DrawScope.prism(
+    f: VizFrame,
+    time: Float,
+) {
+    val m = min(size.width, size.height)
+    val r0 = m * 0.27f
+    val out = m / 2f
+    var slowBass = 0f
+    for (i in 0 until 8) slowBass += f.slow[i]
+    slowBass /= 8f
+    val kick = (f.energy - slowBass).coerceAtLeast(0f)
+    val bass = min(1.3f, f.energy * 1.15f + kick * 1.6f)
+
+    // Ángulo (radianes) e intensidad de cada foco en este cuadro.
+    val n = PRISM_LIGHTS.size
+    val angles = FloatArray(n)
+    val power = FloatArray(n)
+    PRISM_LIGHTS.forEachIndexed { k, l ->
+        var v = 0f
+        for (i in l.from until l.to) v += f.bands[i]
+        v = min(1f, v / (l.to - l.from) * l.gain)
+        if (l.kick) v = min(1f, v * 0.6f + kick * 2f)
+        angles[k] = l.angle * PI.toFloat() / 180f + time * 0.2f + f.spin * 0.04f + 0.1f * sin(time * 0.5f + k * 1.7f)
+        power[k] = 0.5f + v * 0.55f
+    }
+
+    drawIntoCanvas { it.saveLayer(Rect(center.x - out, center.y - out, center.x + out, center.y + out), Paint()) }
+    // 1) Colores alrededor: cada punto mezcla los focos cercanos (más peso al más cercano).
+    val steps = 96
+    val ring =
+        Array(steps + 1) { j ->
+            val a = TWO_PI * j / steps
+            var ws = 0f
+            var r = 0f
+            var g = 0f
+            var b = 0f
+            var p = 0f
+            for (k in 0 until n) {
+                val d = abs(((a - angles[k]) % TWO_PI + 3f * PI.toFloat()) % TWO_PI - PI.toFloat())
+                val w = exp(-(d / 0.58f) * (d / 0.58f)).pow(1.25f) + 1e-6f
+                val c = PRISM_LIGHTS[k].color
+                ws += w
+                r += c.red * w
+                g += c.green * w
+                b += c.blue * w
+                p += power[k] * w
+            }
+            j / steps.toFloat() to Color(r / ws, g / ws, b / ws, (p / ws * 1.05f).coerceIn(0f, 1f))
+        }
+    drawCircle(Brush.sweepGradient(*ring, center = center), radius = out)
+    // 2) Focos detrás del disco, sumando luz: llegan más lejos cuando suena su parte.
+    PRISM_LIGHTS.forEachIndexed { k, l ->
+        val pw = power[k]
+        val p = Offset(center.x + cos(angles[k]) * r0 * 0.8f, center.y + sin(angles[k]) * r0 * 0.8f)
+        val reach = r0 * (0.6f + pw * 0.55f)
+        drawCircle(
+            Brush.radialGradient(
+                0f to lerp(l.color, Color.White, 0.3f).copy(alpha = (pw * 0.8f).coerceAtMost(1f)),
+                0.45f to l.color.copy(alpha = (pw * 0.5f).coerceAtMost(1f)),
+                1f to l.color.copy(alpha = 0f),
+                center = p,
+                radius = reach,
+            ),
+            radius = reach,
+            center = p,
+            blendMode = BlendMode.Plus,
+        )
+    }
+    // 3) Filo blanco suave pegado al borde.
+    val edge = r0 * 1.2f
+    val edgeA = (0.55f + bass * 0.25f).coerceAtMost(1f)
+    drawCircle(
+        Brush.radialGradient(
+            0f to Color.White.copy(alpha = edgeA),
+            r0 / edge to Color.White.copy(alpha = edgeA),
+            (r0 * 1.06f) / edge to Color.White.copy(alpha = 0.12f),
+            1f to Color.White.copy(alpha = 0f),
+            center = center,
+            radius = edge,
+        ),
+        radius = edge,
+        blendMode = BlendMode.Plus,
+    )
+    // 4) Máscara: la luz es muy fuerte pegada al disco y se apaga suave hasta el fondo.
+    val l1 = r0 * 0.05f
+    val l2 = r0 * (0.18f + bass * 0.2f)
+    val l3 = r0 * (0.5f + bass * 0.35f)
+    val l4 = r0 * (1.3f + bass * 0.5f)
+    val maskSteps = 40
+    val mask = ArrayList<Pair<Float, Color>>(maskSteps + 2)
+    mask += 0f to Color.Black
+    for (k in 0..maskSteps) {
+        val x = (k / maskSteps.toFloat()).pow(1.5f)
+        val d = x * (out - r0)
+        val fade = (1f - x * x).let { it * it }
+        val light =
+            (0.9f * exp(-d / l1) + (0.6f + bass * 0.3f) * exp(-d / l2) + (0.32f + bass * 0.18f) * exp(-d / l3) + 0.17f * exp(-d / l4))
+                .coerceAtMost(1f) * fade
+        mask += (r0 + d) / out to Color.Black.copy(alpha = light)
+    }
+    drawCircle(Brush.radialGradient(*mask.toTypedArray(), center = center, radius = out), radius = out, blendMode = BlendMode.DstIn)
+    drawIntoCanvas { it.restore() }
+
     drawCircle(Color(0xFF020306), radius = r0)
 }
 
