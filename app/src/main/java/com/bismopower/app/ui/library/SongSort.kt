@@ -111,7 +111,7 @@ fun SortButton(
             onDismissRequest = { open = false },
             offset = DpOffset(0.dp, 6.dp),
             shape = RoundedCornerShape(16.dp),
-            containerColor = if (c.dark) Color(0xFF1A2030) else Color.White,
+            containerColor = if (c.dark) Color(0xFF1C1C20) else Color.White,
         ) {
             Text(
                 "Ordenar por",

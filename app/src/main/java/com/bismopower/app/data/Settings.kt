@@ -5,6 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -36,6 +37,9 @@ data class AppSettings(
     val playerView: String = "COVER",
     val vizStyle: String = "HALO",
     val vizPalette: String = "ARTWORK",
+    /** Paleta "Mi color": tono de 0 a 360 e intensidad de 0 (blanco) a 1 (color puro). */
+    val vizCustomHue: Float = 265f,
+    val vizCustomSat: Float = 0.75f,
     /** Si hay varias copias de la misma canción, la biblioteca muestra solo una. */
     val hideDuplicates: Boolean = true,
 )
@@ -57,6 +61,8 @@ class SettingsRepository(
         val PLAYER_VIEW = stringPreferencesKey("player_view")
         val VIZ_STYLE = stringPreferencesKey("viz_style")
         val VIZ_PALETTE = stringPreferencesKey("viz_palette")
+        val VIZ_CUSTOM_HUE = floatPreferencesKey("viz_custom_hue")
+        val VIZ_CUSTOM_SAT = floatPreferencesKey("viz_custom_sat")
         val HIDE_DUPLICATES = booleanPreferencesKey("hide_duplicates")
     }
 
@@ -77,6 +83,8 @@ class SettingsRepository(
                 playerView = p[PLAYER_VIEW] ?: d.playerView,
                 vizStyle = p[VIZ_STYLE] ?: d.vizStyle,
                 vizPalette = p[VIZ_PALETTE] ?: d.vizPalette,
+                vizCustomHue = p[VIZ_CUSTOM_HUE] ?: d.vizCustomHue,
+                vizCustomSat = p[VIZ_CUSTOM_SAT] ?: d.vizCustomSat,
                 hideDuplicates = p[HIDE_DUPLICATES] ?: d.hideDuplicates,
             )
         }
@@ -99,6 +107,18 @@ class SettingsRepository(
         context.dataStore.edit {
             it[SONG_SORT] = sort
             if (sort == "SHUFFLE") it[SHUFFLE_SEED] = System.nanoTime()
+        }
+    }
+
+    /** Guarda el color propio del visualizador y deja elegida la paleta "Mi color". */
+    suspend fun setVizCustom(
+        hue: Float,
+        sat: Float,
+    ) {
+        context.dataStore.edit {
+            it[VIZ_CUSTOM_HUE] = hue
+            it[VIZ_CUSTOM_SAT] = sat
+            it[VIZ_PALETTE] = "CUSTOM"
         }
     }
 

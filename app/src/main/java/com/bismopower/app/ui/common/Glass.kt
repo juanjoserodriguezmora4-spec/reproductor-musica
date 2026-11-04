@@ -115,7 +115,8 @@ fun GlassBackground(
 ) {
     val c = LocalBismo.current
     val blobs = colors ?: c.blobs
-    val alpha = if (c.dark) 0.6f else 0.95f
+    // En oscuro las manchas van más suaves para que el fondo se vea negro y no azulado.
+    val alpha = if (c.dark) 0.38f else 0.95f
     Box(
         modifier
             .fillMaxSize()

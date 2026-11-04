@@ -109,7 +109,7 @@ private val NumSmall = T.tiny.copy(fontWeight = androidx.compose.ui.text.font.Fo
 private val NumBig = T.big.copy(fontFeatureSettings = "tnum")
 
 /** Fondo de la "pantalla" del ecualizador: azul casi negro, teñido apenas con el acento del tema. */
-private fun inkFor(c: BismoColors): Color = lerp(Color(0xFF0B0F1C), c.accent, 0.07f)
+private fun inkFor(c: BismoColors): Color = lerp(Color(0xFF0A0A0C), c.accent, 0.07f)
 
 /** El acento sobre la pantalla oscura: si es muy oscuro se aclara para que brille. */
 private fun glowFor(c: BismoColors): Color {

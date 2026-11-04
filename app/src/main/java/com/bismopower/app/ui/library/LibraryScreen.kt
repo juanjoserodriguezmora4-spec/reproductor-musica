@@ -222,7 +222,7 @@ private fun SectionsWithRefresh(
                     Modifier
                         .align(Alignment.TopCenter)
                         .statusBarsPadding(),
-                containerColor = if (c.dark) Color(0xFF1D2333) else Color.White,
+                containerColor = if (c.dark) Color(0xFF1C1C20) else Color.White,
                 color = c.accent,
             )
         },

@@ -2,19 +2,24 @@ package com.bismopower.app.ui.player.visualizer
 
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PointMode
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.unit.dp
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.exp
 import kotlin.math.floor
 import kotlin.math.min
 import kotlin.math.pow
@@ -65,20 +70,63 @@ enum class VizPalette(
     ICE("ICE", "Hielo", listOf(Color(0xFF0A4BFF), Color(0xFF2D9CFF), Color(0xFF8FE3FF), Color(0xFFEFFBFF))),
     SUNSET("SUNSET", "Atardecer", listOf(Color(0xFFFF2E7E), Color(0xFFFF6A5C), Color(0xFFFFA94D), Color(0xFFFFD86B))),
     MONO("MONO", "Blanco", listOf(Color(0xFF8A93A6), Color(0xFFC9CFDB), Color(0xFFFFFFFF), Color(0xFFFFFFFF))),
+
+    /** Un color que elige el usuario con las barras de tono e intensidad. */
+    CUSTOM("CUSTOM", "Mi color", null),
     ;
 
-    /** Los colores de la paleta; con "Carátula" se arman a partir del color de la canción. */
-    fun colors(accent: Color): List<Color> =
-        fixed ?: listOf(
-            lerp(accent, Color.Black, 0.25f),
-            accent,
-            lerp(accent, Color.White, 0.45f),
-            lerp(accent, Color.White, 0.8f),
-        )
+    /**
+     * Los colores de la paleta. Con "Carátula" se arman a partir del color de la canción
+     * ([accent]); con "Mi color", a partir del tono ([customHue], 0 a 360) y la intensidad
+     * ([customSat], 0 = blanco, 1 = color puro) guardados en Ajustes.
+     */
+    fun colors(
+        accent: Color,
+        customHue: Float = DEFAULT_HUE,
+        customSat: Float = DEFAULT_SAT,
+    ): List<Color> =
+        fixed ?: if (this == CUSTOM) {
+            customColors(customHue, customSat)
+        } else {
+            listOf(
+                lerp(accent, Color.Black, 0.25f),
+                accent,
+                lerp(accent, Color.White, 0.45f),
+                lerp(accent, Color.White, 0.8f),
+            )
+        }
 
     companion object {
+        const val DEFAULT_HUE = 265f
+        const val DEFAULT_SAT = 0.75f
+
         fun of(id: String): VizPalette = entries.firstOrNull { it.id == id } ?: ARTWORK
     }
+}
+
+/** El color elegido: [hue] de 0 a 360 y [sat] de 0 (blanco) a 1 (color puro). */
+fun customColor(
+    hue: Float,
+    sat: Float,
+): Color = Color.hsv(((hue % 360f) + 360f) % 360f, sat.coerceIn(0f, 1f), 1f)
+
+/** Cuatro tonos alrededor del color elegido, de oscuro a casi blanco, como las otras paletas. */
+fun customColors(
+    hue: Float,
+    sat: Float,
+): List<Color> {
+    val s = sat.coerceIn(0f, 1f)
+    fun hsv(
+        h: Float,
+        sa: Float,
+        v: Float,
+    ) = Color.hsv(((h % 360f) + 360f) % 360f, sa.coerceIn(0f, 1f), v)
+    return listOf(
+        hsv(hue - 18f, s, 0.7f),
+        hsv(hue, s, 1f),
+        hsv(hue + 14f, s * 0.55f, 1f),
+        hsv(hue + 24f, s * 0.2f, 1f),
+    )
 }
 
 /** Color de la paleta en la posición [t] (0 a 1), pasando suave entre sus colores. */
@@ -110,7 +158,7 @@ fun DrawScope.drawViz(
         VizStyle.HALO -> halo(f, colors, time)
         VizStyle.ECLIPSE -> eclipse(f, colors, time)
         VizStyle.AURA -> aura(f, colors, time)
-        VizStyle.LINE -> line(f, colors, time)
+        VizStyle.LINE -> line(f, colors)
         VizStyle.BARS -> bars(f, colors)
         VizStyle.LED -> led(f, colors)
         VizStyle.PULSE -> pulse(f, colors, time)
@@ -133,6 +181,9 @@ private fun DrawScope.halo(
     val m = min(size.width, size.height)
     val r0 = m * VizStyle.HALO.coverSize / 2f + 4.dp.toPx()
     val room = m / 2f - r0
+    // Luz blanca y partículas, como en Aura.
+    whiteGlow(r0, room, f.energy, colors.at(0.5f))
+    particles(r0, f, time, alpha = 0.8f, dotSize = 1f)
     val brush = sweep(colors)
     // Aro brillante: varias pasadas anchas y transparentes debajo de una fina y clara.
     for (k in 4 downTo 1) {
@@ -169,44 +220,22 @@ private fun DrawScope.halo(
 
 // ---------------------------------------------------------------- Línea
 
-/**
- * Una línea de luz que cruza la carátula y ondula con la música.
- * No dibuja la onda cruda (tiembla demasiado): suma cinco ondas suaves cuyo tamaño sigue a
- * graves, medios y agudos, y que viajan en sentidos opuestos a la velocidad de [VizFrame.spin]
- * (más rápido cuando la música está fuerte).
- */
+/** Una línea de luz que cruza la carátula y se mueve con la forma de la onda. */
 private fun DrawScope.line(
     f: VizFrame,
     colors: List<Color>,
-    time: Float,
 ) {
     val side = min(size.width, size.height)
     val left = center.x - side / 2f + 10.dp.toPx()
     val width = side - 20.dp.toPx()
-    val groups = 5
-    val amps =
-        FloatArray(groups) { g ->
-            var sum = 0f
-            for (j in 0 until 8) {
-                val t = (g * 8 + j) / 44f
-                sum += 0.65f * f.bands.sample(t) + 0.35f * f.slow.sample(t)
-            }
-            sum / 8f
-        }
-    val n = 120
+    val n = f.wave.size
     val path = Path()
     for (i in 0 until n) {
         val t = i / (n - 1f)
-        val taper = sin(PI * t).toFloat().pow(0.7f) // quieta en las puntas, viva en el centro
-        var y = 0f
-        for (g in 0 until groups) {
-            val dir = if (g % 2 == 0) 1f else -1f
-            y += amps[g] * sin(2f * PI.toFloat() * t * (1.5f + g * 1.1f) + dir * f.spin * (1.6f + g * 0.6f) + g * 1.7f)
-        }
-        y /= groups * 0.55f
+        val taper = sin(PI * t).toFloat().pow(0.6f) // quieta en las puntas, viva en el centro
         val x = left + t * width
-        val py = center.y + y * side * 0.3f * taper
-        if (i == 0) path.moveTo(x, py) else path.lineTo(x, py)
+        val y = center.y + f.wave[i] * side * 0.24f * taper
+        if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
     }
     val brush = Brush.horizontalGradient(colors, startX = left, endX = left + width)
     drawPath(path, brush, alpha = 0.12f, style = Stroke(14.dp.toPx(), cap = StrokeCap.Round))
@@ -345,79 +374,120 @@ private val NOISE = FloatArray(64) { i -> ((sin(i * 12.9898f) * 43758.547f) % 1f
 
 private const val TWO_PI = 6.2831855f
 
-/** Tono (en grados) de la corona del eclipse en el ángulo [a]: da la vuelta con [VizFrame.spin]. */
-private fun eclipseHue(
-    a: Float,
-    f: VizFrame,
-    time: Float,
-): Float = a * 180f / PI.toFloat() + f.spin * 30f + 28f * sin(2f * a - time * 0.6f)
-
-private fun hueColor(
-    hue: Float,
-    saturation: Float,
-): Color = Color.hsv(((hue % 360f) + 360f) % 360f, saturation, 1f)
-
 /**
- * Disco negro con una corona de arcoíris pegada al borde, como un eclipse. Los colores giran
- * alrededor (más rápido cuando la música está fuerte) y brillan más donde empujan las bandas.
- * Usa su propio arcoíris: no depende de la paleta.
+ * Disco negro con luz de verdad alrededor, como un eclipse: muy fuerte y casi blanca pegada al
+ * borde, y que se va apagando poco a poco hasta mezclarse con el fondo negro.
+ * Se pinta en una capa aparte: primero los colores de la paleta alrededor (dos o tres tonos
+ * grandes que giran despacio y brillan más donde empuja la música), encima un núcleo blanco, y
+ * al final una máscara redonda ([BlendMode.DstIn]) que decide cuánta luz queda a cada distancia.
  */
-@Suppress("UNUSED_PARAMETER")
 private fun DrawScope.eclipse(
     f: VizFrame,
     colors: List<Color>,
     time: Float,
 ) {
     val m = min(size.width, size.height)
-    val r0 = m * 0.3f
+    val r0 = m * 0.27f
+    val out = m / 2f
     val bass = f.energy
-    // 0) Luz blanca detrás del disco, como la corona de un eclipse de verdad; crece con los graves.
-    val back = min(m / 2f, r0 * (1.9f + bass * 0.3f))
-    val white = (0.6f + bass * 0.3f).coerceAtMost(1f)
+    drawIntoCanvas { it.saveLayer(Rect(center.x - out, center.y - out, center.x + out, center.y + out), Paint()) }
+    // 1) Colores alrededor.
+    val hues =
+        Array(37) { i ->
+            val a = TWO_PI * i / 36f
+            val turned = ((a + f.spin * 0.35f) % TWO_PI + TWO_PI) % TWO_PI
+            val v = f.bands.sample(0.03f + abs(turned / PI.toFloat() - 1f) * 0.75f)
+            val u = 0.5f + 0.42f * sin(a - f.spin * 0.3f) + 0.12f * sin(2f * a + time * 0.4f)
+            val alpha = (0.5f + v * 0.5f + 0.12f * sin(a * 3f + time * 0.7f)).coerceIn(0f, 1f)
+            i / 36f to lerp(colors.at(u), Color.White, 0.08f).copy(alpha = alpha)
+        }
+    drawCircle(Brush.sweepGradient(*hues, center = center), radius = out)
+    // 2) Núcleo blanco pegado al borde.
+    val core = r0 * 1.35f
     drawCircle(
         Brush.radialGradient(
-            0f to Color.White.copy(alpha = white),
-            r0 / back to Color.White.copy(alpha = white),
-            (r0 * 1.15f) / back to Color.White.copy(alpha = white * 0.6f),
-            (r0 * 1.4f) / back to Color.White.copy(alpha = white * 0.18f),
+            0f to Color.White.copy(alpha = 0.8f),
+            r0 / core to Color.White.copy(alpha = 0.8f),
+            (r0 * 1.07f) / core to Color.White.copy(alpha = 0.3f),
             1f to Color.White.copy(alpha = 0f),
             center = center,
-            radius = back,
+            radius = core,
         ),
-        radius = back,
+        radius = core,
     )
-    // 1) Corona: muchos anillos finos del mismo degradado, más densos cerca del borde.
-    val stops = Array(25) { i -> i / 24f to hueColor(eclipseHue(TWO_PI * i / 24f, f, time), 0.9f) }
-    val ring = Brush.sweepGradient(*stops, center = center)
-    val glow = (0.1f * (0.75f + bass * 0.9f)).coerceAtMost(1f)
-    for (k in 1..14) {
-        val e = r0 * (0.4f + bass * 0.3f) * (k / 14f).pow(1.6f)
-        drawCircle(ring, radius = r0, style = Stroke(e * 2f), alpha = glow)
+    // 3) Máscara: cuánta luz queda a cada distancia del borde (suma de varias caídas suaves).
+    val l1 = r0 * 0.05f
+    val l2 = r0 * (0.3f + bass * 0.15f)
+    val l3 = r0 * (0.75f + bass * 0.25f)
+    val l4 = r0 * (1.6f + bass * 0.4f)
+    val steps = 40
+    val mask = ArrayList<Pair<Float, Color>>(steps + 2)
+    mask += 0f to Color.Black
+    for (k in 0..steps) {
+        val x = (k / steps.toFloat()).pow(1.5f)
+        val d = x * (out - r0)
+        val fade = (1f - x * x).let { it * it }
+        val light =
+            (0.75f * exp(-d / l1) + (0.4f + bass * 0.2f) * exp(-d / l2) + (0.3f + bass * 0.1f) * exp(-d / l3) + 0.22f * exp(-d / l4))
+                .coerceAtMost(1f) * fade
+        mask += (r0 + d) / out to Color.Black.copy(alpha = light)
     }
-    // 2) Manchas de luz que crecen con la música y viajan alrededor.
-    val n = 40
-    for (i in 0 until n) {
-        val a = TWO_PI * i / n
-        val turned = ((a + f.spin * 0.35f) % TWO_PI + TWO_PI) % TWO_PI
-        val v = f.bands.sample(0.03f + abs(turned / PI.toFloat() - 1f) * 0.75f)
-        val reach = r0 * (0.1f + v * 0.5f + bass * 0.1f)
-        val c = hueColor(eclipseHue(a, f, time), 0.85f)
-        val p = Offset(center.x + cos(a) * (r0 + reach * 0.25f), center.y + sin(a) * (r0 + reach * 0.25f))
-        drawCircle(
-            Brush.radialGradient(listOf(c.copy(alpha = (0.65f * v + 0.1f).coerceAtMost(1f)), c.copy(alpha = 0f)), center = p, radius = reach),
-            radius = reach,
-            center = p,
-        )
-    }
-    // 3) Borde blanco caliente que late con los graves.
-    drawCircle(Color.White, radius = r0 + 1.5.dp.toPx(), style = Stroke(7.dp.toPx()), alpha = (0.22f + bass * 0.35f).coerceAtMost(1f))
-    drawCircle(Color.White, radius = r0 + 0.5.dp.toPx(), style = Stroke((1.4f + bass * 2.5f).dp.toPx()), alpha = 0.85f)
-    drawCircle(Color(0xFF030407), radius = r0)
+    drawCircle(Brush.radialGradient(*mask.toTypedArray(), center = center, radius = out), radius = out, blendMode = BlendMode.DstIn)
+    drawIntoCanvas { it.restore() }
+
+    particles(r0, f, time, alpha = 0.55f, dotSize = 0.8f)
+    drawCircle(Color(0xFF020306), radius = r0)
 }
 
 // ---------------------------------------------------------------- Aura
 
 private fun fract(x: Float): Float = x - floor(x)
+
+/** Resplandor blanco alrededor de un círculo de radio [r0] (transparente por dentro), crece con los graves. */
+private fun DrawScope.whiteGlow(
+    r0: Float,
+    room: Float,
+    bass: Float,
+    tint: Color,
+) {
+    val glowR = r0 + room * (0.55f + bass * 0.45f)
+    val glowA = (0.25f + bass * 0.45f).coerceAtMost(1f)
+    drawCircle(
+        Brush.radialGradient(
+            0f to Color.Transparent,
+            (r0 - 1f) / glowR to Color.Transparent,
+            r0 / glowR to Color.White.copy(alpha = glowA),
+            1f to tint.copy(alpha = 0f),
+            center = center,
+            radius = glowR,
+        ),
+        radius = glowR,
+    )
+}
+
+/** Partículas blancas que salen del borde del círculo y se desvanecen; más rápido con música fuerte. */
+private fun DrawScope.particles(
+    r0: Float,
+    f: VizFrame,
+    time: Float,
+    alpha: Float,
+    dotSize: Float,
+) {
+    val m = min(size.width, size.height)
+    for (i in 0 until 46) {
+        val h1 = fract(sin(i * 12.9898f) * 43758.547f)
+        val h2 = fract(sin(i * 78.233f) * 12543.12f)
+        val a = h1 * TWO_PI + time * 0.05f
+        val prog = fract(f.spin * 0.07f * (0.5f + h2) + h2)
+        val rr = r0 + prog * (m / 2f - r0)
+        drawCircle(
+            Color.White,
+            radius = ((0.7f + h2 * 1.5f) * dotSize).dp.toPx(),
+            center = Offset(center.x + cos(a) * rr, center.y + sin(a) * rr),
+            alpha = ((1f - prog) * min(1f, prog * 6f) * alpha).coerceIn(0f, 1f),
+        )
+    }
+}
 
 /**
  * Estilo de los videos de NoCopyrightSounds: la carátula en un círculo y alrededor barras de
@@ -434,37 +504,8 @@ private fun DrawScope.aura(
     val room = m / 2f - r0 - 4.dp.toPx()
     val bass = f.energy
     val tint = colors.at(0.5f)
-
-    // Resplandor blanco alrededor de la carátula (transparente por dentro para no taparla).
-    val glowR = r0 + room * (0.55f + bass * 0.45f)
-    val glowA = (0.25f + bass * 0.45f).coerceAtMost(1f)
-    drawCircle(
-        Brush.radialGradient(
-            0f to Color.Transparent,
-            (r0 - 1f) / glowR to Color.Transparent,
-            r0 / glowR to Color.White.copy(alpha = glowA),
-            1f to tint.copy(alpha = 0f),
-            center = center,
-            radius = glowR,
-        ),
-        radius = glowR,
-    )
-
-    // Partículas que salen del centro y se desvanecen.
-    for (i in 0 until 46) {
-        val h1 = fract(sin(i * 12.9898f) * 43758.547f)
-        val h2 = fract(sin(i * 78.233f) * 12543.12f)
-        val a = h1 * TWO_PI + time * 0.05f
-        val prog = fract(f.spin * 0.07f * (0.5f + h2) + h2)
-        val rr = r0 + prog * (m / 2f - r0)
-        val alpha = ((1f - prog) * min(1f, prog * 6f) * 0.8f).coerceIn(0f, 1f)
-        drawCircle(
-            Color.White,
-            radius = (0.7f + h2 * 1.5f).dp.toPx(),
-            center = Offset(center.x + cos(a) * rr, center.y + sin(a) * rr),
-            alpha = alpha,
-        )
-    }
+    whiteGlow(r0, room, bass, tint)
+    particles(r0, f, time, alpha = 0.8f, dotSize = 1f)
 
     // Barras blancas, simétricas (graves arriba, agudos abajo a los dos lados).
     val n = 120

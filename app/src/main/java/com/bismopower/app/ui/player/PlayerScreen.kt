@@ -109,7 +109,7 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-private val PlayerBg = Color(0xFF07090F)
+private val PlayerBg = Color(0xFF050507)
 private val OnAccent = Color(0xFF0B0F1A)
 
 /**
@@ -145,7 +145,12 @@ fun PlayerScreen(
     val appSettings by app.settings.flow.collectAsStateWithLifecycle(initialValue = null)
     val view = appSettings?.playerView ?: "COVER"
     val vizStyle = VizStyle.of(appSettings?.vizStyle ?: "")
-    val vizColors = VizPalette.of(appSettings?.vizPalette ?: "").colors(colors.accent)
+    val vizColors =
+        VizPalette.of(appSettings?.vizPalette ?: "").colors(
+            colors.accent,
+            appSettings?.vizCustomHue ?: VizPalette.DEFAULT_HUE,
+            appSettings?.vizCustomSat ?: VizPalette.DEFAULT_SAT,
+        )
     fun setView(mode: String) {
         app.appScope.launch { app.settings.set(SettingsRepository.PLAYER_VIEW, mode) }
     }

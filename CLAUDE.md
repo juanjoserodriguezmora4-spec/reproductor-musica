@@ -101,11 +101,11 @@ canción en los controles.
 
 | Elemento         | Modo claro                                  | Modo oscuro                                      |
 |------------------|---------------------------------------------|--------------------------------------------------|
-| Fondo base       | #EEF1F7 + manchas azul, lila, rosa, menta   | #0B0F1A + manchas índigo, morado, verde petróleo |
+| Fondo base       | #EEF1F7 + manchas azul, lila, rosa, menta   | #050507 (casi negro) + manchas del tema al 38 %  |
 | Panel de vidrio  | Blanco 62 %, blur 22 dp                     | Blanco 7 %, blur 22 dp                           |
 | Borde            | Blanco 90 %                                 | Blanco 12 %                                      |
 | Texto principal  | #121826                                     | #EEF1F8                                          |
-| Texto secundario | #5B6475                                     | #9AA3B5                                          |
+| Texto secundario | #5B6475                                     | #A0A0A8                                          |
 | Acento           | Según el tema de color (Bruma: #4B5BFF)     | Según el tema de color (Bruma: #8B98FF)          |
 | Esquinas         | Tarjetas 20 dp, botones 14 dp, barra inferior 26 dp | Iguales                                  |
 
@@ -114,6 +114,8 @@ Cereza, Grafito y "Fondo de pantalla" (Material You, Android 12+). Cada tema sol
 acento, `onAccent` y las 4 manchas en claro y oscuro; el resto del vidrio es igual.
 Encima del acento siempre se usa `c.onAccent`, nunca `Color.White` fijo.
 `LocalBismoDark` es la versión oscura del tema actual (la usa el reproductor).
+El modo oscuro es negro neutro, no azulado: paneles #141416, superficies #121214–#1C1C20,
+hoja inferior #121214, fondo del reproductor #050507. Grafito oscuro usa manchas grises.
 
 Reglas:
 - "Reducir transparencia": paneles 100 % opacos sin blur. Android 8 a 11 sin esa opción:
@@ -209,14 +211,18 @@ Reglas:
 - Estilos: Halo, Eclipse, Aura, Línea, Barras, LED, Pulso, Cordillera, Brillo, Espejo
   (Anillo se quitó; un `vizStyle` desconocido cae en Halo). `VizFrame.slow` son las bandas
   muy suavizadas; `VizFrame.spin` es un ángulo que avanza más rápido con música fuerte (casi
-  quieto en pausa). Línea = suma de 5 ondas suaves que viajan con `spin` (no la onda cruda).
-  Eclipse usa su propio arcoíris (no la paleta) que gira despacio con `spin`, corona pegada al
-  borde que crece con las bandas, y luz blanca detrás del disco.
+  quieto en pausa). Línea dibuja la onda (`wave`) tal cual, como la primera versión (así
+  le gusta al usuario).
+  Eclipse = luz real alrededor de un disco negro: se pinta en una capa (`saveLayer`) con los
+  colores de la paleta alrededor + núcleo blanco, y una máscara radial `BlendMode.DstIn` hecha
+  con la suma de 4 caídas exponenciales (fuerte en el borde, cola larga hasta el fondo).
   Aura = estilo NoCopyrightSounds: carátula en círculo (CoverMode.CIRCLE), 120 barras blancas
-  simétricas hacia afuera, resplandor blanco con los graves y partículas que se alejan con `spin`.
-  Paletas: Carátula, Neón,
-  Lavanda, Fuego, Aurora, Hielo, Atardecer, Blanco. Se guardan en Ajustes (`vizStyle`,
-  `vizPalette`) igual que la vista del centro del reproductor (`playerView`: COVER/LYRICS/VIZ)
+  simétricas hacia afuera. `whiteGlow()` y `particles()` (resplandor blanco con los graves y
+  partículas que se alejan con `spin`) se comparten con Halo y Eclipse.
+  Paletas: Carátula, Neón, Lavanda, Fuego, Aurora, Hielo, Atardecer, Blanco y "Mi color"
+  (CUSTOM: tono `vizCustomHue` 0–360 e intensidad `vizCustomSat` 0–1, elegidos con dos barras
+  en `Sheet.Visualizer`; se guardan al soltar con `setVizCustom`). Se guardan en Ajustes
+  (`vizStyle`, `vizPalette`) igual que la vista del centro del reproductor (`playerView`: COVER/LYRICS/VIZ)
 - En el visualizador: deslizar a los lados cambia de estilo, un toque pausa, el botón de la
   esquina abre `Sheet.Visualizer` (miniaturas dibujadas con `PreviewFrame`)
 

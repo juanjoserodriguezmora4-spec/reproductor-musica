@@ -16,6 +16,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -48,10 +50,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
@@ -63,6 +67,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
@@ -88,6 +93,7 @@ import com.bismopower.app.ui.player.visualizer.CoverMode
 import com.bismopower.app.ui.player.visualizer.PreviewFrame
 import com.bismopower.app.ui.player.visualizer.VizPalette
 import com.bismopower.app.ui.player.visualizer.VizStyle
+import com.bismopower.app.ui.player.visualizer.customColor
 import com.bismopower.app.ui.player.visualizer.drawViz
 import com.bismopower.app.ui.theme.LocalBismo
 import com.bismopower.app.ui.theme.T
@@ -194,7 +200,7 @@ fun SheetHost(controller: SheetController) {
                 Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-                    .background(if (c.dark) Color(0xFF141926) else Color(0xFFF8F9FC))
+                    .background(if (c.dark) Color(0xFF121214) else Color(0xFFF8F9FC))
                     // Que tocar la hoja no la cierre (el fondo oscuro sí la cierra).
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
                     .navigationBarsPadding()
@@ -504,7 +510,24 @@ private fun ColumnScope.VisualizerSheet(sheet: Sheet.Visualizer) {
     val settings by app.settings.flow.collectAsState(initial = null)
     val style = VizStyle.of(settings?.vizStyle ?: "")
     val palette = VizPalette.of(settings?.vizPalette ?: "")
-    val colors = palette.colors(sheet.accent)
+    // "Mi color": se cambia en vivo mientras arrastras y se guarda al soltar.
+    var hue by remember { mutableFloatStateOf(VizPalette.DEFAULT_HUE) }
+    var sat by remember { mutableFloatStateOf(VizPalette.DEFAULT_SAT) }
+    var editing by remember { mutableStateOf(false) }
+    LaunchedEffect(settings?.vizCustomHue, settings?.vizCustomSat) {
+        val now = settings
+        if (now != null && !editing) {
+            hue = now.vizCustomHue
+            sat = now.vizCustomSat
+        }
+    }
+    fun saveCustom() {
+        editing = false
+        val h = hue
+        val sa = sat
+        app.appScope.launch { app.settings.setVizCustom(h, sa) }
+    }
+    val colors = palette.colors(sheet.accent, hue, sat)
 
     SheetTitle("Visualizador")
     Text(
@@ -530,16 +553,16 @@ private fun ColumnScope.VisualizerSheet(sheet: Sheet.Visualizer) {
                             .fillMaxWidth()
                             .aspectRatio(1f)
                             .clip(Corners.button)
-                            .background(Color(0xFF0B0F1A))
+                            .background(Color(0xFF050507))
                             .border(if (on) 2.dp else 0.dp, if (on) c.accent else Color.Transparent, Corners.button)
                             .padding(6.dp),
                     ) {
                         val side = kotlin.math.min(size.width, size.height)
                         when (s.cover) {
-                            CoverMode.CIRCLE -> drawCircle(Color(0xFF2A3145), radius = side * s.coverSize / 2f)
+                            CoverMode.CIRCLE -> drawCircle(Color(0xFF2A2A30), radius = side * s.coverSize / 2f)
                             CoverMode.SQUARE ->
                                 drawRoundRect(
-                                    Color(0xFF2A3145),
+                                    Color(0xFF2A2A30),
                                     topLeft = androidx.compose.ui.geometry.Offset(center.x - side / 2f, center.y - side / 2f),
                                     size = androidx.compose.ui.geometry.Size(side, side),
                                     cornerRadius = androidx.compose.ui.geometry.CornerRadius(8.dp.toPx()),
@@ -572,12 +595,99 @@ private fun ColumnScope.VisualizerSheet(sheet: Sheet.Visualizer) {
                         .border(2.5.dp, if (on) c.accent else Color.Transparent, CircleShape)
                         .padding(5.dp)
                         .clip(CircleShape)
-                        .background(Brush.linearGradient(p.colors(sheet.accent))),
-                )
+                        .background(
+                            if (p == VizPalette.CUSTOM) Brush.sweepGradient(RAINBOW) else Brush.linearGradient(p.colors(sheet.accent)),
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (p == VizPalette.CUSTOM) {
+                        Box(
+                            Modifier
+                                .size(18.dp)
+                                .border(2.dp, Color.White, CircleShape)
+                                .padding(2.dp)
+                                .clip(CircleShape)
+                                .background(customColor(hue, sat)),
+                        )
+                    }
+                }
                 Spacer(Modifier.height(4.dp))
                 Text(p.label, style = T.tiny, color = if (on) c.text else c.muted, maxLines = 1)
             }
         }
+    }
+    if (palette == VizPalette.CUSTOM) {
+        Spacer(Modifier.height(10.dp))
+        Text("Tono", style = T.small, color = c.muted, modifier = Modifier.padding(start = 6.dp))
+        ColorBar(
+            brush = Brush.horizontalGradient(RAINBOW),
+            value = hue / 360f,
+            thumb = customColor(hue, 1f),
+            onChange = {
+                editing = true
+                hue = it * 360f
+            },
+            onDone = ::saveCustom,
+        )
+        Text("Intensidad", style = T.small, color = c.muted, modifier = Modifier.padding(start = 6.dp))
+        ColorBar(
+            brush = Brush.horizontalGradient(listOf(Color.White, customColor(hue, 1f))),
+            value = sat,
+            thumb = customColor(hue, sat),
+            onChange = {
+                editing = true
+                sat = it
+            },
+            onDone = ::saveCustom,
+        )
+    }
+}
+
+/** Todos los tonos, para la barra de "Mi color". */
+private val RAINBOW = List(13) { i -> customColor(i * 30f % 360f, 1f) }
+
+/** Barra para elegir un valor de 0 a 1 tocando o arrastrando el dedo, con su punto de color. */
+@Composable
+private fun ColorBar(
+    brush: Brush,
+    value: Float,
+    thumb: Color,
+    onChange: (Float) -> Unit,
+    onDone: () -> Unit,
+) {
+    val change by rememberUpdatedState(onChange)
+    val done by rememberUpdatedState(onDone)
+    Canvas(
+        Modifier
+            .fillMaxWidth()
+            .height(40.dp)
+            .pointerInput(Unit) {
+                detectTapGestures { o ->
+                    change((o.x / size.width).coerceIn(0f, 1f))
+                    done()
+                }
+            }.pointerInput(Unit) {
+                detectHorizontalDragGestures(
+                    onDragStart = { o -> change((o.x / size.width).coerceIn(0f, 1f)) },
+                    onDragEnd = { done() },
+                    onDragCancel = { done() },
+                ) { event, _ ->
+                    event.consume()
+                    change((event.position.x / size.width).coerceIn(0f, 1f))
+                }
+            },
+    ) {
+        val h = 14.dp.toPx()
+        val r = 11.dp.toPx()
+        drawRoundRect(
+            brush,
+            topLeft = androidx.compose.ui.geometry.Offset(r, center.y - h / 2f),
+            size = androidx.compose.ui.geometry.Size(size.width - 2 * r, h),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(h / 2f),
+        )
+        val x = r + value.coerceIn(0f, 1f) * (size.width - 2 * r)
+        drawCircle(Color.White, radius = r, center = androidx.compose.ui.geometry.Offset(x, center.y))
+        drawCircle(thumb, radius = r - 3.dp.toPx(), center = androidx.compose.ui.geometry.Offset(x, center.y))
     }
 }
 

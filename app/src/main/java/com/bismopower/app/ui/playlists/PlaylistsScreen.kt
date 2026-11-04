@@ -378,7 +378,7 @@ private fun ListDetail(
                     .reorderItem(reorder, i, order.size)
                     .then(
                         if (reorder.from == i) {
-                            Modifier.background(if (c.dark) Color(0xFF1D2333) else Color.White, RoundedCornerShape(12.dp))
+                            Modifier.background(if (c.dark) Color(0xFF1C1C20) else Color.White, RoundedCornerShape(12.dp))
                         } else {
                             Modifier.glassSegment(i, order.size)
                         },

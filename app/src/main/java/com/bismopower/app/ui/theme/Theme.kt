@@ -121,9 +121,9 @@ val COLOR_THEMES =
             id = "GRAFITO",
             name = "Grafito",
             lightAccent = Color(0xFF353D4D),
-            darkAccent = Color(0xFFD5DBE6),
+            darkAccent = Color(0xFFE2E2E6),
             lightBlobs = listOf(Color(0xFFDCE0E7), Color(0xFFE7E7EB), Color(0xFFD3D8E1), Color(0xFFEBEDF1)),
-            darkBlobs = listOf(Color(0xFF1F2633), Color(0xFF262A33), Color(0xFF1A2230), Color(0xFF2A2F3A)),
+            darkBlobs = listOf(Color(0xFF1E1E22), Color(0xFF26262A), Color(0xFF1A1A1D), Color(0xFF2A2A2E)),
         ),
     )
 
@@ -156,15 +156,15 @@ private fun darkColors(
     blobs: List<Color>,
 ) = BismoColors(
     dark = true,
-    bg = Color(0xFF0B0F1A),
+    bg = Color(0xFF050507), // casi negro puro (antes era azul oscuro)
     blobs = blobs,
     glass = Color(0x12FFFFFF), // blanco 7 %
     glassStrong = Color(0x1CFFFFFF),
-    solid = Color(0xD9161B29), // sin desenfoque: 85 %
+    solid = Color(0xD9141416), // sin desenfoque: 85 %
     border = Color(0x1FFFFFFF), // blanco 12 %
     selected = Color(0x2EFFFFFF),
     text = Color(0xFFEEF1F8),
-    muted = Color(0xFF9AA3B5),
+    muted = Color(0xFFA0A0A8),
     accent = accent,
     onAccent = onAccent,
     accentSoft = accent.copy(alpha = 0.16f),
@@ -284,7 +284,7 @@ fun BismoTheme(
     // desenfoque) y sin esa opción, los paneles quedan al 85 % para conservar algo del vidrio.
     val c =
         if (reduceTransparency) {
-            base.copy(solid = if (dark) Color(0xFF161B29) else Color.White)
+            base.copy(solid = if (dark) Color(0xFF141416) else Color.White)
         } else {
             base
         }
@@ -298,12 +298,12 @@ fun BismoTheme(
                 error = c.err,
                 background = c.bg,
                 onBackground = c.text,
-                surface = Color(0xFF151A27),
+                surface = Color(0xFF121214),
                 onSurface = c.text,
-                surfaceVariant = Color(0xFF1C2232),
+                surfaceVariant = Color(0xFF1A1A1E),
                 onSurfaceVariant = c.muted,
-                surfaceContainer = Color(0xFF181D2B),
-                surfaceContainerHigh = Color(0xFF1D2333),
+                surfaceContainer = Color(0xFF161618),
+                surfaceContainerHigh = Color(0xFF1C1C20),
                 outline = Color(0x33FFFFFF),
             )
         } else {
