@@ -218,7 +218,10 @@ Reglas:
   con la suma de 4 caídas exponenciales (fuerte en el borde, cola larga hasta el fondo).
   Aura = estilo NoCopyrightSounds: carátula en círculo (CoverMode.CIRCLE), 120 barras blancas
   simétricas hacia afuera. `whiteGlow()` y `particles()` (resplandor blanco con los graves y
-  partículas que se alejan con `spin`) se comparten con Halo y Eclipse.
+  partículas que se alejan con `spin`) se comparten: Aura usa `whiteGlow`, Halo usa
+  `rimLight()` (luz blanca pegada al aro, misma caída que la del Eclipse) y las partículas.
+  Eclipse reacciona al "golpe" de los graves: `bass = energy·1.15 + kick·1.6`, donde
+  `kick = energy − promedio lento de los graves` (de `VizFrame.slow`).
   Paletas: Carátula, Neón, Lavanda, Fuego, Aurora, Hielo, Atardecer, Blanco y "Mi color"
   (CUSTOM: tono `vizCustomHue` 0–360 e intensidad `vizCustomSat` 0–1, elegidos con dos barras
   en `Sheet.Visualizer`; se guardan al soltar con `setVizCustom`). Se guardan en Ajustes

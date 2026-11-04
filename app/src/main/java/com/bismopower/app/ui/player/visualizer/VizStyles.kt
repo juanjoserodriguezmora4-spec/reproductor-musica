@@ -181,8 +181,8 @@ private fun DrawScope.halo(
     val m = min(size.width, size.height)
     val r0 = m * VizStyle.HALO.coverSize / 2f + 4.dp.toPx()
     val room = m / 2f - r0
-    // Luz blanca y partículas, como en Aura.
-    whiteGlow(r0, room, f.energy, colors.at(0.5f))
+    // Luz blanca pegada al aro (como la del Eclipse) y partículas como en Aura.
+    rimLight(r0, f.energy)
     particles(r0, f, time, alpha = 0.8f, dotSize = 1f)
     val brush = sweep(colors)
     // Aro brillante: varias pasadas anchas y transparentes debajo de una fina y clara.
@@ -389,7 +389,13 @@ private fun DrawScope.eclipse(
     val m = min(size.width, size.height)
     val r0 = m * 0.27f
     val out = m / 2f
-    val bass = f.energy
+    // Graves con más "golpe": a la fuerza de los graves se suma cuánto suben sobre su promedio
+    // lento, así cada bombo se nota aunque la canción sea fuerte todo el tiempo.
+    var slowBass = 0f
+    for (i in 0 until 8) slowBass += f.slow[i]
+    slowBass /= 8f
+    val kick = (f.energy - slowBass).coerceAtLeast(0f)
+    val bass = min(1.3f, f.energy * 1.15f + kick * 1.6f)
     drawIntoCanvas { it.saveLayer(Rect(center.x - out, center.y - out, center.x + out, center.y + out), Paint()) }
     // 1) Colores alrededor.
     val hues =
@@ -398,16 +404,17 @@ private fun DrawScope.eclipse(
             val turned = ((a + f.spin * 0.35f) % TWO_PI + TWO_PI) % TWO_PI
             val v = f.bands.sample(0.03f + abs(turned / PI.toFloat() - 1f) * 0.75f)
             val u = 0.5f + 0.42f * sin(a - f.spin * 0.3f) + 0.12f * sin(2f * a + time * 0.4f)
-            val alpha = (0.5f + v * 0.5f + 0.12f * sin(a * 3f + time * 0.7f)).coerceIn(0f, 1f)
+            val alpha = (0.45f + v * 0.6f + 0.12f * sin(a * 3f + time * 0.7f)).coerceIn(0f, 1f)
             i / 36f to lerp(colors.at(u), Color.White, 0.08f).copy(alpha = alpha)
         }
     drawCircle(Brush.sweepGradient(*hues, center = center), radius = out)
     // 2) Núcleo blanco pegado al borde.
     val core = r0 * 1.35f
+    val coreA = (0.72f + bass * 0.2f).coerceAtMost(1f)
     drawCircle(
         Brush.radialGradient(
-            0f to Color.White.copy(alpha = 0.8f),
-            r0 / core to Color.White.copy(alpha = 0.8f),
+            0f to Color.White.copy(alpha = coreA),
+            r0 / core to Color.White.copy(alpha = coreA),
             (r0 * 1.07f) / core to Color.White.copy(alpha = 0.3f),
             1f to Color.White.copy(alpha = 0f),
             center = center,
@@ -417,9 +424,9 @@ private fun DrawScope.eclipse(
     )
     // 3) Máscara: cuánta luz queda a cada distancia del borde (suma de varias caídas suaves).
     val l1 = r0 * 0.05f
-    val l2 = r0 * (0.3f + bass * 0.15f)
-    val l3 = r0 * (0.75f + bass * 0.25f)
-    val l4 = r0 * (1.6f + bass * 0.4f)
+    val l2 = r0 * (0.3f + bass * 0.28f)
+    val l3 = r0 * (0.75f + bass * 0.45f)
+    val l4 = r0 * (1.6f + bass * 0.6f)
     val steps = 40
     val mask = ArrayList<Pair<Float, Color>>(steps + 2)
     mask += 0f to Color.Black
@@ -428,7 +435,7 @@ private fun DrawScope.eclipse(
         val d = x * (out - r0)
         val fade = (1f - x * x).let { it * it }
         val light =
-            (0.75f * exp(-d / l1) + (0.4f + bass * 0.2f) * exp(-d / l2) + (0.3f + bass * 0.1f) * exp(-d / l3) + 0.22f * exp(-d / l4))
+            (0.75f * exp(-d / l1) + (0.4f + bass * 0.32f) * exp(-d / l2) + (0.3f + bass * 0.18f) * exp(-d / l3) + 0.22f * exp(-d / l4))
                 .coerceAtMost(1f) * fade
         mask += (r0 + d) / out to Color.Black.copy(alpha = light)
     }
@@ -463,6 +470,37 @@ private fun DrawScope.whiteGlow(
         ),
         radius = glowR,
     )
+}
+
+/**
+ * Luz blanca pegada a un círculo de radio [r0], como la del Eclipse: fuerte en el borde y que se
+ * apaga rápido, sin llegar lejos. Crece un poco con los graves.
+ */
+private fun DrawScope.rimLight(
+    r0: Float,
+    bass: Float,
+) {
+    val out = min(size.width, size.height) / 2f
+    if (out <= r0 + 1f) return
+    val l1 = r0 * 0.04f
+    val l2 = r0 * (0.12f + bass * 0.1f)
+    val l3 = r0 * (0.35f + bass * 0.2f)
+    val l4 = r0 * (0.9f + bass * 0.3f)
+    val clear = Color.White.copy(alpha = 0f)
+    val steps = 40
+    val stops = ArrayList<Pair<Float, Color>>(steps + 3)
+    stops += 0f to clear
+    stops += (r0 - 1f) / out to clear
+    for (k in 0..steps) {
+        val x = (k / steps.toFloat()).pow(1.5f)
+        val d = x * (out - r0)
+        val fade = (1f - x * x).let { it * it }
+        val light =
+            (0.8f * exp(-d / l1) + (0.3f + bass * 0.25f) * exp(-d / l2) + (0.14f + bass * 0.1f) * exp(-d / l3) + 0.06f * exp(-d / l4))
+                .coerceAtMost(1f) * fade
+        stops += (r0 + d) / out to Color.White.copy(alpha = light * 0.8f)
+    }
+    drawCircle(Brush.radialGradient(*stops.toTypedArray(), center = center, radius = out), radius = out)
 }
 
 /** Partículas blancas que salen del borde del círculo y se desvanecen; más rápido con música fuerte. */
