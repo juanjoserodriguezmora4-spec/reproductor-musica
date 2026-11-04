@@ -34,7 +34,7 @@ data class AppSettings(
     val shuffleSeed: Long = 0,
     /** Qué se ve en el centro del reproductor: COVER, LYRICS o VIZ (visualizador). */
     val playerView: String = "COVER",
-    val vizStyle: String = "RING",
+    val vizStyle: String = "HALO",
     val vizPalette: String = "ARTWORK",
     /** Si hay varias copias de la misma canción, la biblioteca muestra solo una. */
     val hideDuplicates: Boolean = true,

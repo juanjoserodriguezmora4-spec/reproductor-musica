@@ -45,7 +45,7 @@ app/src/main/java/com/bismopower/app/
   ui/player/LyricsView     Letra en el lugar de la carátula; la línea actual se ilumina
   widget/                  Widget 4×1 (RemoteViews): PlayerWidget, WidgetUpdater, WidgetSync
   audio/AudioAnalyzer.kt   Copia en mono del audio (AnalyzerTap, después del ecualizador) para el visualizador
-  ui/player/visualizer/    Spectrum (FFT 2048, 64 bandas), VizStyles (7 estilos + paletas), VisualizerView
+  ui/player/visualizer/    Spectrum (FFT 2048, 64 bandas), VizStyles (10 estilos + paletas), VisualizerView
   ui/library/SongSort.kt   Orden de Canciones (nombre, artista, álbum, recientes, duración, mezclada)
   data/Settings.kt         DataStore: tema, color, reducir transparencia, carpetas de música
   data/db/BismoDatabase.kt Room: TrackEntity, consultas de álbumes/artistas/carpetas
@@ -206,7 +206,10 @@ Reglas:
   El audio suena ~280 ms después de procesarse (`AudioAnalyzer.LATENCY_MS`); `Spectrum`
   mueve un "cabezal" a ritmo real y lo corrige hacia ese punto para que se vea suave.
   El reproductor del fundido no alimenta el analizador (`newProcessors(analyze = false)`)
-- Estilos: Anillo, Halo, Línea, Barras, LED, Pulso, Cordillera. Paletas: Carátula, Neón,
+- Estilos: Halo, Eclipse, Aura, Línea, Barras, LED, Pulso, Cordillera, Brillo, Espejo
+  (Anillo se quitó; un `vizStyle` desconocido cae en Halo). `VizFrame.slow` son las bandas
+  muy suavizadas: las usan Línea (suma de 5 ondas suaves, ya no la onda cruda), Eclipse y Aura
+  para moverse con calma. Paletas: Carátula, Neón,
   Lavanda, Fuego, Aurora, Hielo, Atardecer, Blanco. Se guardan en Ajustes (`vizStyle`,
   `vizPalette`) igual que la vista del centro del reproductor (`playerView`: COVER/LYRICS/VIZ)
 - En el visualizador: deslizar a los lados cambia de estilo, un toque pausa, el botón de la

@@ -19,6 +19,9 @@ interface VizFrame {
     /** Marca que se queda un momento arriba cuando una banda baja. */
     val peaks: FloatArray
 
+    /** Las mismas bandas pero mucho más suaves (cambian despacio): para los estilos tranquilos. */
+    val slow: FloatArray
+
     /** Forma de la onda (osciloscopio). */
     val wave: FloatArray
 
@@ -42,6 +45,7 @@ class Spectrum(
 ) : VizFrame {
     override val bands = FloatArray(BANDS)
     override val peaks = FloatArray(BANDS)
+    override val slow = FloatArray(BANDS)
     override val wave = FloatArray(WAVE)
     private val history = Array(HISTORY) { FloatArray(BANDS) }
     private var historyHead = 0
@@ -101,6 +105,8 @@ class Spectrum(
             peaks[i] = if (bands[i] > peaks[i]) bands[i] else max(0f, peaks[i] - (dt * 0.45).toFloat())
             sum += bands[i]
         }
+        val calm = min(1.0, dt * 3.5).toFloat()
+        for (i in 0 until BANDS) slow[i] += (bands[i] - slow[i]) * calm
         var bass = 0f
         for (i in 0 until 8) bass += bands[i]
         energy += (bass / 8f - energy) * min(1.0, dt * 12).toFloat()
@@ -218,6 +224,7 @@ class Spectrum(
 object PreviewFrame : VizFrame {
     override val bands = FloatArray(Spectrum.BANDS) { i -> (0.85f * (1f - i / 80f) * (0.55f + 0.45f * abs(sin(i * 0.55f + 0.7f)))).coerceIn(0.05f, 1f) }
     override val peaks = FloatArray(Spectrum.BANDS) { i -> (bands[i] + 0.06f).coerceAtMost(1f) }
+    override val slow = bands
     override val wave = FloatArray(Spectrum.WAVE) { i -> (sin(i * 0.21f) * 0.55f + sin(i * 0.067f) * 0.3f) }
     private val layers = Array(Spectrum.HISTORY) { a -> FloatArray(Spectrum.BANDS) { i -> (bands[i] * (0.6f + 0.4f * abs(sin(i * 0.9f + a * 0.7f)))) } }
 
