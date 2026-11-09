@@ -60,6 +60,10 @@ class EqRepository(
 
     fun setLimiter(on: Boolean) = set(_state.value.copy(limiter = on))
 
+    fun setAutoPreamp(on: Boolean) = set(_state.value.copy(autoPreamp = on))
+
+    fun setHiRes(on: Boolean) = set(_state.value.copy(hiRes = on))
+
     fun setPreamp(db: Float) = set(_state.value.copy(preampDb = db))
 
     fun setBass(db: Float) = set(_state.value.copy(bassDb = db))
@@ -85,5 +89,8 @@ class EqRepository(
     }
 
     /** Todo plano: bandas, preamplificador, graves y agudos en 0. */
-    fun reset() = set(EqSettings(enabled = _state.value.enabled, limiter = _state.value.limiter))
+    fun reset() =
+        _state.value.let { s ->
+            set(EqSettings(enabled = s.enabled, limiter = s.limiter, autoPreamp = s.autoPreamp, hiRes = s.hiRes))
+        }
 }

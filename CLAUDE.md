@@ -24,7 +24,8 @@ Textos de la interfaz, comentarios y mensajes de commit en español.
 ```
 app/src/main/java/com/bismopower/app/
   BismoApp.kt              AppContainer (db, ajustes, biblioteca, reproductor, efectos)
-  audio/AudioEffects.kt    Cadena de AudioProcessor + RenderersFactory + ParametricEq (motor)
+  audio/AudioEffects.kt    Motor: cadena de AudioProcessor (EQ → limitador → analizador → salida) + RenderersFactory
+  audio/Dsp.kt             Las cuentas, sin Android: EqEngine, LookaheadLimiter, Dither
   audio/Biquad.kt          Fórmulas de los filtros (Audio EQ Cookbook) y respuesta en dB
   audio/EqSettings.kt      Ajustes del ecualizador (inmutables), presets, guardar/leer como texto
   data/EqRepository.kt     Estado del ecualizador: lo guarda (DataStore "equalizer") y lo aplica
@@ -155,10 +156,10 @@ Reglas:
 - 2a (hecha) Ecualizador paramétrico propio en `ParametricEq`:
   - 10 bandas (31 Hz–16 kHz) con frecuencia, ganancia (±15 dB), Q y forma (campana,
     estante de graves, estante de agudos) + perillas de graves (100 Hz) y agudos (10 kHz)
-  - Preamplificador y limitador suave (tanh desde el 90 %) para que no sature
+  - Preamplificador y limitador (ver "Motor de audio: calidad" más abajo)
   - Acepta PCM 16 bits y float; calcula en Double con forma directa II transpuesta
-  - Los ajustes llegan desde la UI con `update()` (objeto inmutable + @Volatile); el hilo
-    de audio recalcula coeficientes cuando cambia la versión, la frecuencia o los canales
+  - Los ajustes llegan desde la UI con `AudioEffects.update()` (objeto inmutable + @Volatile);
+    el hilo de audio recalcula coeficientes cuando cambia el objeto, la frecuencia o los canales
   - Presets de fábrica; cualquier cambio a mano pasa a "Personalizado"
   - Pantalla (rediseño 0.3): visor oscuro tipo equipo de sonido con lectura de la banda
     elegida (cifras tabulares, `tnum`) y la curva con brillo; faders de consola con marcas
@@ -187,7 +188,7 @@ Reglas:
   ExoPlayer con la siguiente canción, cruza volúmenes con curva de igual potencia y al final
   el principal salta (seekTo) a esa canción en la misma posición. Se cancela al pausar,
   saltar, mover la barra o cambiar la cola, y no se usa con el temporizador "al terminar la
-  canción". Cada reproductor necesita su propio `ParametricEq`: `AudioEffects.newProcessors()`
+  canción". Cada reproductor necesita su propia cadena de efectos: `AudioEffects.newChain()`
 - Widget 4×1: el servicio lo actualiza (`WidgetSync`); los botones mandan un broadcast a
   `PlayerWidget`, que usa `PlayerConnection.command`. Sin cola, todo el widget abre la app
 - Letras: botón en la barra de arriba del reproductor. Android 11+ no deja leer .lrc sueltos,
@@ -207,7 +208,7 @@ Reglas:
 - Visualizador sin permiso de micrófono: `AnalyzerTap` copia el audio dentro de ExoPlayer.
   El audio suena ~280 ms después de procesarse (`AudioAnalyzer.LATENCY_MS`); `Spectrum`
   mueve un "cabezal" a ritmo real y lo corrige hacia ese punto para que se vea suave.
-  El reproductor del fundido no alimenta el analizador (`newProcessors(analyze = false)`)
+  El reproductor del fundido no alimenta el analizador (`newChain(analyze = false)`)
 - Estilos: Halo, Eclipse, Prisma, Aura, Línea, Barras, LED, Pulso, Cordillera, Brillo, Espejo
   (Anillo se quitó; un `vizStyle` desconocido cae en Halo). `VizFrame.slow` son las bandas
   muy suavizadas; `VizFrame.spin` es un ángulo que avanza más rápido con música fuerte (casi
@@ -260,7 +261,32 @@ Reglas:
   su carpeta (por ejemplo "Música"). Bruma ya graba el álbum en todas las canciones de un
   álbum de YouTube Music (`--ppa Metadata+ffmpeg_o:-metadata album=…`)
 
+**Motor de audio: calidad**
+- Cadena propia (`EffectChain`, un `AudioProcessorChain` sin Sonic ni saltar silencios, que
+  solo aceptan 16 bits): `ParametricEq` (16 bits → float, preamp + EQ) → `PeakLimiter` →
+  `AnalyzerTap` → `OutputStage`. Con "Alta precisión" `OutputStage` queda inactivo y el
+  AudioTrack recibe float de 32 bits; apagada, pasa a 16 bits con dither triangular.
+  `setEnableFloatOutput` de ExoPlayer se deja en false a propósito: en true se salta los
+  procesadores con archivos de 24 bits. Límite conocido: el decodificador sigue entregando
+  16 bits (los FLAC de 24 bits se reducen antes del EQ); arreglarlo pide un AudioSink propio
+- Limitador con anticipación (`LookaheadLimiter`): mira 5 ms adelante, baja la ganancia con
+  un mínimo deslizante (5 ms + 30 ms de espera) suavizado, suelta en 160 ms, canales unidos,
+  techo 0,985. Reemplaza al `tanh` (con un tono 6 dB pasado: 0 % de distorsión contra 22 %).
+  No añade silencio: guarda los primeros 5 ms y los entrega al final del flujo (`getOutput`/
+  `isEnded` sobrescritos, como `TrimmingAudioProcessor`), así el gapless sigue sin hueco
+- Preamp automático (`EqSettings.autoPreamp`, `headroomDb`): resta el máximo de la curva
+  (bandas + tono) para que nada se pase; la perilla de preamp suma encima (`effectivePreampDb`)
+- `EqSettings.encode()` añadió dos campos al final (auto, alta precisión); `decode` acepta
+  el texto viejo de 8 campos
+- "Alta precisión" se decide al configurar el sink: `PlaybackService` hace `stop()` +
+  `prepare()` cuando cambia. El medidor del limitador (`AudioEffects.limiterReductionDb` /
+  `limiterAt`) lo lee la tarjeta "Calidad" del ecualizador cada 90 ms
+- Probar el motor sin Android: `Dsp.kt` no depende de nada; se compila con kotlinc y se le
+  pasan tonos (así se midió lo de arriba)
+
 **Ideas para después**
+- Normalizar el volumen entre canciones (medir cada canción en segundo plano, guardar en Room)
+- AudioSink propio para decodificar en float (FLAC de 24 bits de punta a punta)
 - Reanudar la última cola al abrir (onPlaybackResumption) y que el widget pueda arrancarla
 - Motor nativo (C++/Oboe), onda real en el reproductor, presets propios del ecualizador
 

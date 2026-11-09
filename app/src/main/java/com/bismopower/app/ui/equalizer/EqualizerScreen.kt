@@ -1,5 +1,6 @@
 package com.bismopower.app.ui.equalizer
 
+import android.os.SystemClock
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
@@ -36,7 +37,9 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -58,6 +61,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
@@ -93,9 +97,11 @@ import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.ln
+import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 
 /** El gráfico muestra de −16 a +16 dB, un poco más que el máximo para que los puntos no toquen el borde. */
 private const val RANGE_DB = 16f
@@ -228,7 +234,9 @@ fun EqualizerScreen() {
                 )
             }
 
-            ToneCard(eq, repo::setPreamp, repo::setBass, repo::setTreble, repo::setLimiter) { touching = it }
+            ToneCard(eq, repo::setPreamp, repo::setBass, repo::setTreble) { touching = it }
+
+            QualityCard(eq, repo::setAutoPreamp, repo::setLimiter, repo::setHiRes)
 
             PrimaryButton(
                 "Dejar todo plano",
@@ -697,14 +705,13 @@ private fun BandEditor(
     }
 }
 
-/** Preamplificador, graves y agudos como perillas, y el limitador. */
+/** Preamplificador, graves y agudos como perillas. */
 @Composable
 private fun ToneCard(
     eq: EqSettings,
     onPreamp: (Float) -> Unit,
     onBass: (Float) -> Unit,
     onTreble: (Float) -> Unit,
-    onLimiter: (Boolean) -> Unit,
     onTouching: (Boolean) -> Unit,
 ) {
     val c = LocalBismo.current
@@ -748,24 +755,118 @@ private fun ToneCard(
                 onTouching = onTouching,
             )
         }
-        Text("Si subes mucho las bandas, baja el preamp para dejar espacio.", style = T.tiny, color = c.muted)
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .clip(Corners.button)
-                .clickable { onLimiter(!eq.limiter) }
-                .padding(vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(BI.Shield, null, tint = c.muted, modifier = Modifier.size(19.dp))
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text("Limitador", style = T.body, color = c.text)
-                Text("Redondea los picos para que el sonido no se distorsione", style = T.tiny, color = c.muted)
-            }
-            Switch(checked = eq.limiter, onCheckedChange = onLimiter, colors = switchColors())
+        Text(
+            if (eq.autoPreamp) {
+                "El preamp automático ya deja el espacio para las bandas; esta perilla suma o resta encima."
+            } else {
+                "Si subes mucho las bandas, baja el preamp para dejar espacio."
+            },
+            style = T.tiny,
+            color = c.muted,
+        )
+    }
+}
+
+/** Calidad del sonido: preamp automático, limitador (con su medidor) y salida de alta precisión. */
+@Composable
+private fun QualityCard(
+    eq: EqSettings,
+    onAutoPreamp: (Boolean) -> Unit,
+    onLimiter: (Boolean) -> Unit,
+    onHiRes: (Boolean) -> Unit,
+) {
+    val c = LocalBismo.current
+    val limiting = limiterDb()
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .glass(strong = true)
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text("Calidad", style = T.h2, color = c.text)
+        SwitchRow(
+            icon = BI.Sliders,
+            title = "Preamp automático",
+            detail =
+                when {
+                    !eq.autoPreamp -> "Baja el volumen lo justo para que las bandas subidas no distorsionen"
+                    eq.headroomDb < 0.25f -> "Ahora no hace falta: ninguna banda sube el volumen"
+                    else -> "Bajando ${fmtDb(-eq.headroomDb)} dB para que las bandas subidas no distorsionen"
+                },
+            checked = eq.autoPreamp,
+            onChange = onAutoPreamp,
+        )
+        SwitchRow(
+            icon = BI.Shield,
+            title = "Limitador",
+            detail =
+                when {
+                    !eq.limiter -> "Baja el volumen un instante cuando un pico se pasaría del máximo"
+                    limiting >= 0.3f -> "Actuando: ${fmtDb(-limiting)} dB. Si pasa seguido, baja el preamp o las bandas"
+                    else -> "Listo: solo actúa cuando un pico se pasaría del máximo"
+                },
+            checked = eq.limiter,
+            onChange = onLimiter,
+            highlight = eq.limiter && limiting >= 0.3f,
+        )
+        SwitchRow(
+            icon = BI.Wave,
+            title = "Alta precisión (32 bits)",
+            detail = "Entrega el sonido a Android sin recortarlo a 16 bits. Al cambiarlo la canción se corta un instante",
+            checked = eq.hiRes,
+            onChange = onHiRes,
+        )
+    }
+}
+
+/** Fila con ícono, título, explicación y un interruptor; se puede tocar toda la fila. */
+@Composable
+private fun SwitchRow(
+    icon: ImageVector,
+    title: String,
+    detail: String,
+    checked: Boolean,
+    onChange: (Boolean) -> Unit,
+    highlight: Boolean = false,
+) {
+    val c = LocalBismo.current
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(Corners.button)
+            .clickable { onChange(!checked) }
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, null, tint = if (highlight) c.accent else c.muted, modifier = Modifier.size(19.dp))
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = T.body, color = c.text)
+            Text(detail, style = T.tiny, color = if (highlight) c.accent else c.muted)
+        }
+        Spacer(Modifier.width(8.dp))
+        Switch(checked = checked, onCheckedChange = onChange, colors = switchColors())
+    }
+}
+
+/**
+ * Cuántos dB está bajando el limitador ahora. Sube al instante y baja despacio para que se
+ * alcance a leer; en pausa el motor deja de medir y vuelve a 0.
+ */
+@Composable
+private fun limiterDb(): Float {
+    val effects = LocalContext.current.container.audioEffects
+    var shown by remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(effects) {
+        while (true) {
+            val fresh = SystemClock.elapsedRealtime() - effects.limiterAt < 400L
+            val now = if (fresh) effects.limiterReductionDb else 0f
+            shown = if (now > shown) now else max(now, shown - 0.5f)
+            delay(90)
         }
     }
+    return shown
 }
 
 @Composable

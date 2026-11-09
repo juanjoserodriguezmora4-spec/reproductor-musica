@@ -1,221 +1,253 @@
 package com.bismopower.app.audio
 
 import android.content.Context
+import android.os.SystemClock
 import androidx.media3.common.C
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.audio.AudioProcessor
+import androidx.media3.common.audio.AudioProcessorChain
 import androidx.media3.common.audio.BaseAudioProcessor
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
-import java.lang.ref.WeakReference
 import java.nio.ByteBuffer
-import java.util.concurrent.CopyOnWriteArrayList
-import kotlin.math.abs
-import kotlin.math.pow
-import kotlin.math.roundToInt
-import kotlin.math.tanh
+import kotlin.math.log10
 
 /**
- * Cadena de efectos que se mete en el AudioSink de ExoPlayer.
+ * Motor de audio: la cadena de efectos que se mete en el AudioSink de ExoPlayer.
  *
- * Cada reproductor necesita su propia copia del ecualizador (un AudioProcessor no se puede
- * compartir): el principal y el que suena unos segundos durante el fundido entre canciones.
- * [update] le pasa los mismos ajustes a todas las copias.
+ * El audio decodificado pasa, en este orden, por:
+ *  1. [ParametricEq]: lo convierte a float (32 bits) y aplica preamplificador y ecualizador.
+ *  2. [PeakLimiter]: evita que los picos se pasen del máximo sin distorsionar.
+ *  3. [AnalyzerTap]: saca una copia para el visualizador (solo el reproductor principal).
+ *  4. [OutputStage]: con "alta precisión" no hace nada y el audio llega a Android en float;
+ *     sin ella lo pasa a 16 bits con dither.
+ *
+ * Cada reproductor necesita su propia cadena (un AudioProcessor no se puede compartir): el
+ * principal y el que suena unos segundos durante el fundido entre canciones. Todas leen los
+ * mismos ajustes de [settings], que es inmutable y se cambia entero con [update].
  */
 @UnstableApi
 class AudioEffects {
-    @Volatile private var settings = EqSettings()
-    private val equalizers = CopyOnWriteArrayList<WeakReference<ParametricEq>>()
+    @Volatile var settings = EqSettings()
+        private set
 
     /** Copia del audio para el visualizador (solo la llena el reproductor principal). */
     val analyzer = AudioAnalyzer()
 
+    /** Cuántos dB está bajando el limitador ahora mismo (0 = no hace nada). */
+    @Volatile var limiterReductionDb = 0f
+        private set
+
+    /** Cuándo se midió [limiterReductionDb] (reloj `elapsedRealtime`): en pausa el dato se queda viejo. */
+    @Volatile var limiterAt = 0L
+        private set
+
     /**
-     * Efectos nuevos para un reproductor, en el orden en que se procesa el audio.
+     * Cadena nueva para un reproductor.
      * [analyze] = false para el reproductor del fundido, así el visualizador no mezcla dos canciones.
      */
-    fun newProcessors(analyze: Boolean = true): Array<AudioProcessor> {
-        val eq = ParametricEq()
-        eq.update(settings)
-        equalizers.removeIf { it.get() == null }
-        equalizers += WeakReference(eq)
-        return if (analyze) arrayOf(eq, AnalyzerTap(analyzer)) else arrayOf(eq)
+    fun newChain(analyze: Boolean = true): AudioProcessorChain {
+        val read = { settings }
+        val processors = ArrayList<AudioProcessor>()
+        processors += ParametricEq(read)
+        processors += PeakLimiter(read, if (analyze) ::reportLimiter else null)
+        if (analyze) processors += AnalyzerTap(analyzer)
+        processors += OutputStage(read)
+        return EffectChain(processors.toTypedArray())
     }
 
     fun update(newSettings: EqSettings) {
         settings = newSettings
-        equalizers.forEach { it.get()?.update(newSettings) }
+    }
+
+    private fun reportLimiter(gain: Float) {
+        limiterReductionDb = if (gain >= 0.999f) 0f else -20f * log10(gain.coerceAtLeast(0.001f))
+        limiterAt = SystemClock.elapsedRealtime()
     }
 }
 
 /**
- * Ecualizador paramétrico propio: un filtro biquad por banda y por canal.
- *
- * Recibe el audio en PCM de 16 bits o en float y lo devuelve en el mismo formato.
- * Por dentro todo se calcula en `Double`, así subir y bajar bandas no pierde calidad;
- * solo al final se vuelve a 16 bits.
- *
- * La interfaz cambia los ajustes con [update] desde el hilo principal; el hilo de audio
- * los lee en [queueInput]. Por eso los ajustes son inmutables y se pasan con @Volatile.
+ * La lista de procesadores para el AudioSink. No usa los de velocidad ni de saltar silencios de
+ * ExoPlayer (la app no cambia la velocidad y esos solo aceptan 16 bits).
  */
 @UnstableApi
-class ParametricEq : BaseAudioProcessor() {
-    @Volatile private var settings = EqSettings()
+private class EffectChain(
+    private val processors: Array<AudioProcessor>,
+) : AudioProcessorChain {
+    override fun getAudioProcessors(): Array<AudioProcessor> = processors
 
-    @Volatile private var version = 0
+    override fun applyPlaybackParameters(playbackParameters: PlaybackParameters): PlaybackParameters = PlaybackParameters.DEFAULT
 
-    // Lo que sigue solo lo toca el hilo de audio.
-    private var appliedVersion = -1
-    private var appliedRate = 0
-    private var appliedChannels = 0
-    private var active = false
-    private var limit = true
-    private var preamp = 1.0
-    private var coefs: Array<BiquadCoefs> = emptyArray()
-    private var skip = BooleanArray(0)
+    override fun applySkipSilenceEnabled(skipSilenceEnabled: Boolean): Boolean = false
 
-    // Memoria de cada filtro (las dos últimas muestras), una por filtro y canal: [filtro * canales + canal].
-    private var z1 = DoubleArray(0)
-    private var z2 = DoubleArray(0)
+    override fun getMediaDuration(playoutDuration: Long): Long = playoutDuration
 
-    /** Cambia los ajustes. Se aplican en el siguiente bloque de audio (unos milisegundos). */
-    fun update(newSettings: EqSettings) {
-        settings = newSettings
-        version++
-    }
+    override fun getSkippedOutputFrameCount(): Long = 0L
+}
+
+/** Lee todas las muestras float que quedan en [buffer] hacia [into] (crece si hace falta) y devuelve el arreglo. */
+private fun readFloats(
+    buffer: ByteBuffer,
+    into: FloatArray,
+    count: Int,
+): FloatArray {
+    val target = if (into.size < count) FloatArray(count) else into
+    buffer.asFloatBuffer().get(target, 0, count)
+    buffer.position(buffer.limit())
+    return target
+}
+
+/**
+ * Preamplificador + ecualizador paramétrico ([EqEngine]).
+ *
+ * Recibe PCM de 16 bits (o float) y siempre entrega float: así lo que calcula el ecualizador
+ * no se vuelve a recortar a 16 bits y queda espacio por encima del máximo para que el
+ * limitador trabaje bien.
+ */
+@UnstableApi
+class ParametricEq(
+    private val settings: () -> EqSettings,
+) : BaseAudioProcessor() {
+    private val engine = EqEngine()
+    private var floats = FloatArray(0)
+    private var shorts = ShortArray(0)
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat =
         when (inputAudioFormat.encoding) {
-            // Mismo formato de entrada y de salida: solo cambian los valores de las muestras.
-            C.ENCODING_PCM_16BIT, C.ENCODING_PCM_FLOAT -> inputAudioFormat
+            C.ENCODING_PCM_16BIT, C.ENCODING_PCM_FLOAT ->
+                AudioProcessor.AudioFormat(inputAudioFormat.sampleRate, inputAudioFormat.channelCount, C.ENCODING_PCM_FLOAT)
             // Otros formatos (por ejemplo audio comprimido que va directo al DAC) pasan sin tocar.
             else -> AudioProcessor.AudioFormat.NOT_SET
         }
 
     override fun queueInput(inputBuffer: ByteBuffer) {
-        val size = inputBuffer.remaining()
-        if (size == 0) return
-        val out = replaceOutputBuffer(size)
         val format = inputAudioFormat
-        val channels = format.channelCount
-        if (channels > 0) prepare(format.sampleRate, channels)
-
-        if (!active || channels <= 0) {
-            out.put(inputBuffer)
-            out.flip()
+        val isFloat = format.encoding == C.ENCODING_PCM_FLOAT
+        val count = inputBuffer.remaining() / (if (isFloat) 4 else 2)
+        if (count == 0) {
+            inputBuffer.position(inputBuffer.limit())
             return
         }
-
-        var ch = 0
-        if (format.encoding == C.ENCODING_PCM_FLOAT) {
-            while (inputBuffer.remaining() >= 4) {
-                val y = processSample(inputBuffer.getFloat().toDouble(), ch)
-                out.putFloat(y.toFloat())
-                ch++
-                if (ch == channels) ch = 0
-            }
+        if (isFloat) {
+            floats = readFloats(inputBuffer, floats, count)
         } else {
-            while (inputBuffer.remaining() >= 2) {
-                val y = processSample(inputBuffer.getShort() / 32768.0, ch)
-                out.putShort((y * 32767.0).roundToInt().coerceIn(-32768, 32767).toShort())
-                ch++
-                if (ch == channels) ch = 0
-            }
+            if (floats.size < count) floats = FloatArray(count)
+            if (shorts.size < count) shorts = ShortArray(count)
+            inputBuffer.asShortBuffer().get(shorts, 0, count)
+            inputBuffer.position(inputBuffer.limit())
+            for (i in 0 until count) floats[i] = shorts[i] * (1f / 32768f)
         }
-        // Si quedara algún byte suelto (no debería), sale tal cual para no descuadrar el audio.
-        while (inputBuffer.hasRemaining()) out.put(inputBuffer.get())
-        out.flip()
+        if (format.channelCount > 0) {
+            engine.prepare(settings(), format.sampleRate, format.channelCount)
+            engine.process(floats, count)
+        }
+        val out = replaceOutputBuffer(count * 4)
+        out.asFloatBuffer().put(floats, 0, count)
+        out.limit(count * 4)
     }
 
-    /** Pasa una muestra de un canal por el preamplificador, todos los filtros y el limitador. */
-    private fun processSample(
-        x: Double,
-        ch: Int,
-    ): Double {
-        var v = x * preamp
-        val channels = appliedChannels
-        for (f in coefs.indices) {
-            if (skip[f]) continue
-            val k = coefs[f]
-            val i = f * channels + ch
-            // Forma directa II transpuesta: la más estable con números en Double.
-            val y = k.b0 * v + z1[i]
-            z1[i] = k.b1 * v - k.a1 * y + z2[i]
-            z2[i] = k.b2 * v - k.a2 * y
-            v = y
-        }
-        return if (limit) softClip(v) else v
+    override fun onFlush(streamMetadata: AudioProcessor.StreamMetadata) {
+        engine.clearMemory()
     }
 
-    /** Recalcula los filtros si cambiaron los ajustes, la frecuencia de muestreo o los canales. */
-    private fun prepare(
-        sampleRate: Int,
-        channels: Int,
-    ) {
-        val v = version
-        val formatChanged = sampleRate != appliedRate || channels != appliedChannels
-        if (v == appliedVersion && !formatChanged) return
-        val s = settings
-        val filters = s.filters()
-
-        val wasActive = active
-        active = s.enabled
-        limit = s.limiter
-        preamp = 10.0.pow(s.preampDb / 20.0)
-        coefs =
-            Array(filters.size) { i ->
-                val b = filters[i]
-                if (abs(b.gainDb) < 0.05f) {
-                    BiquadCoefs.IDENTITY
-                } else {
-                    BiquadCoefs.design(b.type, b.freq.toDouble(), b.gainDb.toDouble(), b.q.toDouble(), sampleRate.toDouble())
-                }
-            }
-        val newSkip = BooleanArray(filters.size) { abs(filters[it].gainDb) < 0.05f }
-
-        // La memoria de los filtros se borra si cambia el formato, si el ecualizador se
-        // acaba de encender o si una banda se apaga (para que no quede un resto de sonido viejo).
-        if (formatChanged || z1.size != filters.size * channels || (active && !wasActive)) {
-            z1 = DoubleArray(filters.size * channels)
-            z2 = DoubleArray(filters.size * channels)
-        } else {
-            for (f in newSkip.indices) {
-                if (newSkip[f]) {
-                    for (c in 0 until channels) {
-                        z1[f * channels + c] = 0.0
-                        z2[f * channels + c] = 0.0
-                    }
-                }
-            }
-        }
-        skip = newSkip
-        appliedVersion = v
-        appliedRate = sampleRate
-        appliedChannels = channels
-    }
-
-    /** Al reiniciar el reproductor se fuerza a recalcular todo con el siguiente bloque de audio. */
     override fun onReset() {
-        appliedVersion = -1
-        appliedRate = 0
-        appliedChannels = 0
+        engine.clearMemory()
+    }
+}
+
+/**
+ * Limitador con anticipación ([LookaheadLimiter]). Trabaja en float y retrasa el audio unos
+ * 5 ms; lo que queda dentro del retraso sale al terminar la canción (por eso sobrescribe
+ * [getOutput] e [isEnded], igual que el procesador de recorte de ExoPlayer).
+ *
+ * [report] recibe la ganancia más baja de cada bloque para mostrarla en el ecualizador.
+ */
+@UnstableApi
+class PeakLimiter(
+    private val settings: () -> EqSettings,
+    private val report: ((Float) -> Unit)?,
+) : BaseAudioProcessor() {
+    private val core = LookaheadLimiter()
+    private var floats = FloatArray(0)
+
+    private fun isOn(): Boolean = settings().let { it.enabled && it.limiter }
+
+    override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat =
+        if (inputAudioFormat.encoding == C.ENCODING_PCM_FLOAT) inputAudioFormat else AudioProcessor.AudioFormat.NOT_SET
+
+    override fun queueInput(inputBuffer: ByteBuffer) {
+        val count = inputBuffer.remaining() / 4
+        if (count == 0) {
+            inputBuffer.position(inputBuffer.limit())
+            return
+        }
+        floats = readFloats(inputBuffer, floats, count)
+        val written = core.process(floats, count, isOn())
+        report?.invoke(core.lastLowest)
+        val out = replaceOutputBuffer(written * 4)
+        out.asFloatBuffer().put(floats, 0, written)
+        out.limit(written * 4)
     }
 
-    private companion object {
-        /** A partir de este nivel el limitador empieza a redondear los picos. */
-        const val KNEE = 0.9
-
-        /**
-         * Limitador suave: por debajo del 90 % no toca nada; por encima redondea el pico
-         * en lugar de cortarlo de golpe, que es lo que suena a distorsión.
-         */
-        fun softClip(x: Double): Double {
-            val a = abs(x)
-            if (a <= KNEE) return x
-            val y = KNEE + (1.0 - KNEE) * tanh((a - KNEE) / (1.0 - KNEE))
-            return if (x < 0) -y else y
+    override fun getOutput(): ByteBuffer {
+        if (super.isEnded() && core.pendingFrames > 0) {
+            val size = core.latencyFrames * inputAudioFormat.channelCount.coerceAtLeast(1)
+            if (floats.size < size) floats = FloatArray(size)
+            val written = core.drain(floats, isOn())
+            if (written > 0) {
+                val out = replaceOutputBuffer(written * 4)
+                out.asFloatBuffer().put(floats, 0, written)
+                out.limit(written * 4)
+            }
         }
+        return super.getOutput()
+    }
+
+    override fun isEnded(): Boolean = super.isEnded() && core.pendingFrames == 0
+
+    override fun onFlush(streamMetadata: AudioProcessor.StreamMetadata) {
+        core.configure(inputAudioFormat.sampleRate, inputAudioFormat.channelCount)
+    }
+
+    override fun onReset() {
+        core.reset()
+    }
+}
+
+/**
+ * Último paso. Con "alta precisión" encendida se queda inactivo y el audio llega a Android en
+ * float de 32 bits. Apagada, lo convierte a 16 bits con dither ([Dither]).
+ * El modo se decide al configurar la cadena (cuando arranca la reproducción).
+ */
+@UnstableApi
+class OutputStage(
+    private val settings: () -> EqSettings,
+) : BaseAudioProcessor() {
+    private val dither = Dither()
+    private var floats = FloatArray(0)
+    private var shorts = ShortArray(0)
+
+    override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat =
+        if (inputAudioFormat.encoding != C.ENCODING_PCM_FLOAT || settings().hiRes) {
+            AudioProcessor.AudioFormat.NOT_SET
+        } else {
+            AudioProcessor.AudioFormat(inputAudioFormat.sampleRate, inputAudioFormat.channelCount, C.ENCODING_PCM_16BIT)
+        }
+
+    override fun queueInput(inputBuffer: ByteBuffer) {
+        val count = inputBuffer.remaining() / 4
+        if (count == 0) {
+            inputBuffer.position(inputBuffer.limit())
+            return
+        }
+        floats = readFloats(inputBuffer, floats, count)
+        if (shorts.size < count) shorts = ShortArray(count)
+        dither.toInt16(floats, shorts, count)
+        val out = replaceOutputBuffer(count * 2)
+        out.asShortBuffer().put(shorts, 0, count)
+        out.limit(count * 2)
     }
 }
 
@@ -233,7 +265,10 @@ class BismoRenderersFactory(
     ): AudioSink =
         DefaultAudioSink
             .Builder(context)
-            .setEnableFloatOutput(enableFloatOutput)
-            .setAudioProcessors(effects.newProcessors(analyze))
+            // La salida float la decide nuestra cadena (OutputStage). La opción de ExoPlayer se deja
+            // apagada a propósito: encendida, se salta los procesadores (y el ecualizador) con
+            // archivos de alta resolución.
+            .setEnableFloatOutput(false)
+            .setAudioProcessorChain(effects.newChain(analyze))
             .build()
 }

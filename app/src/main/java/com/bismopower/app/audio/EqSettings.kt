@@ -1,6 +1,8 @@
 package com.bismopower.app.audio
 
 import java.util.Locale
+import kotlin.math.abs
+import kotlin.math.pow
 
 /** Una banda del ecualizador: frecuencia central (Hz), ganancia (dB), ancho (Q) y forma. */
 data class EqBand(
@@ -27,7 +29,36 @@ data class EqSettings(
     val limiter: Boolean = true,
     val bands: List<EqBand> = defaultBands(),
     val preset: String = "Plano",
+    /** Baja el volumen lo justo para que las bandas subidas no se pasen del máximo. */
+    val autoPreamp: Boolean = true,
+    /** Entrega el audio a Android en 32 bits (float) en vez de recortarlo a 16 bits. */
+    val hiRes: Boolean = true,
 ) {
+    /**
+     * Cuántos dB sube, como mucho, la curva completa (bandas + graves + agudos). Es el espacio
+     * que hay que dejar para que nada se pase del máximo. Nunca es negativo.
+     */
+    val headroomDb: Float by lazy {
+        val fs = 48000.0
+        val active =
+            filters()
+                .filter { abs(it.gainDb) >= 0.05f }
+                .map { BiquadCoefs.design(it.type, it.freq.toDouble(), it.gainDb.toDouble(), it.q.toDouble(), fs) }
+        var top = 0.0
+        if (active.isNotEmpty()) {
+            for (i in 0 until HEADROOM_POINTS) {
+                val f = MIN_FREQ * (MAX_FREQ / MIN_FREQ).toDouble().pow(i / (HEADROOM_POINTS - 1.0))
+                val db = active.sumOf { it.magnitudeDb(f, fs) }
+                if (db > top) top = db
+            }
+        }
+        top.toFloat()
+    }
+
+    /** El preamplificador que de verdad se aplica: el de la perilla menos el espacio automático. */
+    val effectivePreampDb: Float
+        get() = preampDb - (if (autoPreamp) headroomDb else 0f)
+
     /** Los filtros que se aplican al audio: las 10 bandas más las perillas de graves y agudos. */
     fun filters(): List<EqBand> =
         bands +
@@ -47,12 +78,16 @@ data class EqSettings(
             append(if (limiter) 1 else 0).append('|')
             append(preset).append('|')
             append(bands.joinToString(";") { "${fmt(it.freq)},${fmt(it.gainDb)},${fmt(it.q)},${it.type.name}" })
+            // Campos nuevos al final: los ajustes guardados por versiones viejas se siguen leyendo.
+            append('|').append(if (autoPreamp) 1 else 0)
+            append('|').append(if (hiRes) 1 else 0)
         }
 
     companion object {
         val FREQS = floatArrayOf(31f, 62f, 125f, 250f, 500f, 1000f, 2000f, 4000f, 8000f, 16000f)
         const val BASS_FREQ = 100f
         const val TREBLE_FREQ = 10000f
+        private const val HEADROOM_POINTS = 160
 
         fun defaultBands(gains: FloatArray? = null): List<EqBand> = FREQS.mapIndexed { i, f -> EqBand(f, gains?.getOrNull(i) ?: 0f) }
 
@@ -80,6 +115,8 @@ data class EqSettings(
                     limiter = p[5] == "1",
                     preset = p[6],
                     bands = bands,
+                    autoPreamp = p.getOrNull(8)?.let { it == "1" } ?: true,
+                    hiRes = p.getOrNull(9)?.let { it == "1" } ?: true,
                 )
             }.getOrNull()
         }

@@ -6,6 +6,7 @@ import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.CacheBitmapLoader
@@ -24,6 +25,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 const val EXTRA_ROUTE = "route"
@@ -82,6 +86,21 @@ class PlaybackService : MediaSessionService() {
         // Fundido entre canciones: lee los segundos de Ajustes. No se usa con el temporizador
         // "al terminar la canción", porque ese necesita que la canción termine sola.
         serviceScope.launch { app.settings.flow.collect { crossfadeMs = it.crossfadeSec * 1000L } }
+
+        // "Alta precisión" se decide cuando se configura la salida de audio. Al cambiarla se
+        // reinicia la reproducción (misma canción, mismo punto) para que tome efecto enseguida.
+        serviceScope.launch {
+            app.equalizer.state
+                .map { it.hiRes }
+                .distinctUntilChanged()
+                .drop(1)
+                .collect {
+                    if (player.playbackState != Player.STATE_IDLE) {
+                        player.stop()
+                        player.prepare()
+                    }
+                }
+        }
         crossfader =
             Crossfader(
                 context = this,
