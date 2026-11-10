@@ -66,6 +66,10 @@ class EqRepository(
 
     fun setNormalize(on: Boolean) = set(_state.value.copy(normalize = on))
 
+    fun setSpatial(mode: String) = set(_state.value.copy(spatial = mode))
+
+    fun setSpatialAmount(amount: Float) = set(_state.value.copy(spatialAmount = amount.coerceIn(0f, 1f)))
+
     fun setPreamp(db: Float) = set(_state.value.copy(preampDb = db))
 
     fun setBass(db: Float) = set(_state.value.copy(bassDb = db))
@@ -100,6 +104,8 @@ class EqRepository(
                     autoPreamp = s.autoPreamp,
                     hiRes = s.hiRes,
                     normalize = s.normalize,
+                    spatial = s.spatial,
+                    spatialAmount = s.spatialAmount,
                 ),
             )
         }

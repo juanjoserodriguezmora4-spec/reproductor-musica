@@ -26,6 +26,7 @@ app/src/main/java/com/bismopower/app/
   BismoApp.kt              AppContainer (db, ajustes, biblioteca, reproductor, efectos)
   audio/AudioEffects.kt    Motor: cadena de AudioProcessor (EQ → limitador → analizador → salida) + RenderersFactory
   audio/Dsp.kt             Las cuentas, sin Android: EqEngine, LookaheadLimiter, Dither
+  audio/Spatial.kt         Sonido 3D: SpatialMode (modos) y SpatialEngine (ancho, cruce, rebotes, sala)
   audio/Loudness.kt        Medidor de sonoridad (LUFS, norma BS.1770) y cuánto subir/bajar cada canción
   library/LoudnessScanner  LoudnessStore (caché en archivo) + medición de canciones en segundo plano
   audio/Biquad.kt          Fórmulas de los filtros (Audio EQ Cookbook) y respuesta en dB
@@ -305,6 +306,18 @@ Reglas:
 - `EqEngine` aplica preamp + volumen parejo como una sola ganancia que persigue al objetivo en
   ~15 ms (sin clics al cambiar de canción ni al mover el preamp). El volumen parejo funciona
   aunque el ecualizador esté apagado; el limitador se activa si hay EQ o volumen parejo
+
+**Sonido 3D**
+- Efectos propios (no son los de ningún fabricante): `SpatialMode` = Apagado, Amplio, Frontal,
+  Sala, Envolvente. Cada modo mezcla cuatro ingredientes de `SpatialEngine`: abrir los lados
+  (lateral por encima de 150 Hz), cruce entre oídos (0,28 ms, sin agudos), primeros rebotes
+  (copias del centro a 11/18/24 ms que van solo a los lados) y sala (4 peines + 2 pasa-todo
+  por canal). Los graves no se tocan y lo añadido a los lados se cancela en mono
+- `SpatialFx` va entre el ecualizador y el limitador; solo se activa con estéreo. Cambiar de
+  modo baja el efecto a cero y sube con el nuevo (50 ms), sin clics. La intensidad (0–1) es
+  `EqSettings.spatialAmount`; el modo, `EqSettings.spatial` (campos 12 y 13 del texto guardado)
+- Tarjeta "Sonido 3D" en el ecualizador (fichas + perilla de intensidad). Los números de cada
+  modo se afinaron midiendo, no oyendo: ajustarlos con lo que diga el usuario
 
 **Ideas para después**
 - Volumen parejo por álbum (que un álbum conserve sus diferencias) y elegir el nivel objetivo

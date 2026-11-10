@@ -20,7 +20,8 @@ import kotlin.math.log10
  *
  * El audio decodificado pasa, en este orden, por:
  *  1. [ParametricEq]: lo convierte a float (32 bits) y aplica preamplificador y ecualizador.
- *  2. [PeakLimiter]: evita que los picos se pasen del máximo sin distorsionar.
+ *  2. [SpatialFx]: el Sonido 3D (solo con audio estéreo).
+ *  2b. [PeakLimiter]: evita que los picos se pasen del máximo sin distorsionar.
  *  3. [AnalyzerTap]: saca una copia para el visualizador (solo el reproductor principal).
  *  4. [OutputStage]: con "alta precisión" no hace nada y el audio llega a Android en float;
  *     sin ella lo pasa a 16 bits con dither.
@@ -62,6 +63,7 @@ class AudioEffects {
         val read = { settings }
         val processors = ArrayList<AudioProcessor>()
         processors += ParametricEq(read) { id -> (id ?: currentTrackId)?.let { loudnessOf(it) } }
+        processors += SpatialFx(read)
         processors += PeakLimiter(read, if (analyze) ::reportLimiter else null)
         if (analyze) processors += AnalyzerTap(analyzer)
         processors += OutputStage(read)
@@ -185,6 +187,49 @@ class ParametricEq(
 }
 
 /**
+ * Sonido 3D ([SpatialEngine]). Solo se activa con audio estéreo en float; con otro formato se
+ * queda inactivo y el audio pasa sin tocar. Apagado, copia el audio tal cual.
+ */
+@UnstableApi
+class SpatialFx(
+    private val settings: () -> EqSettings,
+) : BaseAudioProcessor() {
+    private val engine = SpatialEngine()
+    private var floats = FloatArray(0)
+    private var applied: EqSettings? = null
+
+    override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat =
+        if (inputAudioFormat.encoding == C.ENCODING_PCM_FLOAT && inputAudioFormat.channelCount == 2) {
+            inputAudioFormat
+        } else {
+            AudioProcessor.AudioFormat.NOT_SET
+        }
+
+    override fun queueInput(inputBuffer: ByteBuffer) {
+        val count = inputBuffer.remaining() / 4
+        if (count == 0) {
+            inputBuffer.position(inputBuffer.limit())
+            return
+        }
+        floats = readFloats(inputBuffer, floats, count)
+        val s = settings()
+        if (s !== applied) {
+            engine.set(SpatialMode.of(s.spatial), s.spatialAmount)
+            applied = s
+        }
+        engine.process(floats, count)
+        val out = replaceOutputBuffer(count * 4)
+        out.asFloatBuffer().put(floats, 0, count)
+        out.limit(count * 4)
+    }
+
+    override fun onFlush(streamMetadata: AudioProcessor.StreamMetadata) {
+        engine.configure(inputAudioFormat.sampleRate)
+        applied = null
+    }
+}
+
+/**
  * Limitador con anticipación ([LookaheadLimiter]). Trabaja en float y retrasa el audio unos
  * 5 ms; lo que queda dentro del retraso sale al terminar la canción (por eso sobrescribe
  * [getOutput] e [isEnded], igual que el procesador de recorte de ExoPlayer).
@@ -199,8 +244,8 @@ class PeakLimiter(
     private val core = LookaheadLimiter()
     private var floats = FloatArray(0)
 
-    // Hace falta cuando algo puede subir el volumen: el ecualizador o el volumen parejo.
-    private fun isOn(): Boolean = settings().let { it.limiter && (it.enabled || it.normalize) }
+    // Hace falta cuando algo puede subir el volumen: el ecualizador, el volumen parejo o el Sonido 3D.
+    private fun isOn(): Boolean = settings().let { it.limiter && (it.enabled || it.normalize || it.spatial != "OFF") }
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat =
         if (inputAudioFormat.encoding == C.ENCODING_PCM_FLOAT) inputAudioFormat else AudioProcessor.AudioFormat.NOT_SET

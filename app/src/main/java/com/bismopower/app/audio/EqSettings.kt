@@ -35,6 +35,9 @@ data class EqSettings(
     val hiRes: Boolean = true,
     /** Volumen parejo: sube o baja cada canción para que todas suenen igual de fuerte. */
     val normalize: Boolean = true,
+    /** Sonido 3D: el id de un [SpatialMode] y su intensidad de 0 a 1. */
+    val spatial: String = "OFF",
+    val spatialAmount: Float = 0.7f,
 ) {
     /**
      * Cuántos dB sube, como mucho, la curva completa (bandas + graves + agudos). Es el espacio
@@ -84,6 +87,8 @@ data class EqSettings(
             append('|').append(if (autoPreamp) 1 else 0)
             append('|').append(if (hiRes) 1 else 0)
             append('|').append(if (normalize) 1 else 0)
+            append('|').append(spatial)
+            append('|').append(fmt(spatialAmount))
         }
 
     companion object {
@@ -121,6 +126,8 @@ data class EqSettings(
                     autoPreamp = p.getOrNull(8)?.let { it == "1" } ?: true,
                     hiRes = p.getOrNull(9)?.let { it == "1" } ?: true,
                     normalize = p.getOrNull(10)?.let { it == "1" } ?: true,
+                    spatial = p.getOrNull(11) ?: "OFF",
+                    spatialAmount = p.getOrNull(12)?.toFloatOrNull()?.coerceIn(0f, 1f) ?: 0.7f,
                 )
             }.getOrNull()
         }

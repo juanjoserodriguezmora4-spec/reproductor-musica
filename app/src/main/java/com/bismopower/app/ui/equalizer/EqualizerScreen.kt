@@ -82,6 +82,7 @@ import com.bismopower.app.audio.MAX_FREQ
 import com.bismopower.app.audio.MAX_GAIN_DB
 import com.bismopower.app.audio.MAX_TONE_DB
 import com.bismopower.app.audio.MIN_FREQ
+import com.bismopower.app.audio.SpatialMode
 import com.bismopower.app.container
 import com.bismopower.app.ui.common.BI
 import com.bismopower.app.ui.common.Corners
@@ -235,6 +236,8 @@ fun EqualizerScreen() {
             }
 
             ToneCard(eq, repo::setPreamp, repo::setBass, repo::setTreble) { touching = it }
+
+            SpatialCard(eq, repo::setSpatial, repo::setSpatialAmount) { touching = it }
 
             QualityCard(eq, repo::setNormalize, repo::setAutoPreamp, repo::setLimiter, repo::setHiRes)
 
@@ -764,6 +767,75 @@ private fun ToneCard(
             style = T.tiny,
             color = c.muted,
         )
+    }
+}
+
+/** Sonido 3D: elegir el modo y con cuánta fuerza se aplica. */
+@Composable
+private fun SpatialCard(
+    eq: EqSettings,
+    onMode: (String) -> Unit,
+    onAmount: (Float) -> Unit,
+    onTouching: (Boolean) -> Unit,
+) {
+    val c = LocalBismo.current
+    val mode = SpatialMode.of(eq.spatial)
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .glass(strong = true)
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text("Sonido 3D", style = T.h2, color = c.text)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(SpatialMode.entries, key = { it.id }) { m ->
+                val on = m == mode
+                Text(
+                    m.label,
+                    style = T.label,
+                    color = if (on) c.onAccent else c.text,
+                    maxLines = 1,
+                    modifier =
+                        Modifier
+                            .then(
+                                if (on) {
+                                    Modifier.clip(Corners.button).background(c.accent)
+                                } else {
+                                    Modifier.glass(Corners.button, strong = true, shadow = false)
+                                },
+                            ).clickable { onMode(m.id) }
+                            .padding(horizontal = 15.dp, vertical = 10.dp),
+                )
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(mode.hint, style = T.body, color = c.text)
+                Text(
+                    if (mode == SpatialMode.OFF) {
+                        "Pensado para audífonos. Elige un modo para probarlo"
+                    } else {
+                        "Pensado para audífonos. Gira la perilla para más o menos efecto"
+                    },
+                    style = T.tiny,
+                    color = c.muted,
+                )
+            }
+            if (mode != SpatialMode.OFF) {
+                Spacer(Modifier.width(12.dp))
+                Knob(
+                    label = "Intensidad",
+                    value = (eq.spatialAmount * 100f).roundToInt().toString(),
+                    unit = "%",
+                    fraction = eq.spatialAmount,
+                    origin = 0f,
+                    onSet = { onAmount((it * 20f).roundToInt() / 20f) },
+                    onReset = { onAmount(0.7f) },
+                    onTouching = onTouching,
+                )
+            }
+        }
     }
 }
 
