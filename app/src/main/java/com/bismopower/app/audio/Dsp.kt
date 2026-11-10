@@ -13,16 +13,23 @@ import kotlin.math.pow
  */
 
 /**
- * Ecualizador paramétrico: un filtro biquad por banda y por canal, más el preamplificador.
+ * Ecualizador paramétrico: un filtro biquad por banda y por canal, más el volumen (el
+ * preamplificador y el ajuste de "volumen parejo" de la canción que suena).
  * Por dentro todo se calcula en `Double`, así subir y bajar bandas no pierde calidad.
  * Solo lo usa el hilo de audio.
  */
 class EqEngine {
     private var applied: EqSettings? = null
+    private var appliedLoudness: Loudness? = null
     private var rate = 0
     private var channels = 0
     private var active = false
+
+    // Volumen que se quiere y el que se está aplicando: el segundo persigue al primero en unos
+    // 15 ms, así cambiar de canción o mover el preamp no hace "clic".
     private var gain = 1.0
+    private var current = 1.0
+    private var glide = 1.0
     private var coefs: Array<BiquadCoefs> = emptyArray()
     private var skip = BooleanArray(0)
 
@@ -30,18 +37,31 @@ class EqEngine {
     private var z1 = DoubleArray(0)
     private var z2 = DoubleArray(0)
 
-    /** Recalcula los filtros si cambiaron los ajustes, la frecuencia de muestreo o los canales. */
+    /**
+     * Recalcula los filtros y el volumen si cambiaron los ajustes, la canción ([loudness] es lo
+     * fuerte que suena; null = sin medir), la frecuencia de muestreo o los canales.
+     */
     fun prepare(
         s: EqSettings,
+        loudness: Loudness?,
         sampleRate: Int,
         channelCount: Int,
     ) {
         val formatChanged = sampleRate != rate || channelCount != channels
+        if (s === applied && loudness == appliedLoudness && !formatChanged) return
+        val first = applied == null
+        // El preamp es parte del ecualizador (apagado no se aplica); el volumen parejo va aparte.
+        val db =
+            (if (s.enabled) s.effectivePreampDb else 0f) +
+                (if (s.normalize) normalizationGainDb(loudness, s.limiter) else 0f)
+        gain = 10.0.pow(db / 20.0)
+        if (first) current = gain
+        glide = 1.0 - exp(-1.0 / (GLIDE_SECONDS * sampleRate))
+        appliedLoudness = loudness
         if (s === applied && !formatChanged) return
         val filters = s.filters()
         val wasActive = active
         active = s.enabled
-        gain = 10.0.pow(s.effectivePreampDb / 20.0)
         coefs =
             Array(filters.size) { i ->
                 val b = filters[i]
@@ -80,18 +100,34 @@ class EqEngine {
         z2.fill(0.0)
     }
 
-    /** Ecualiza [count] muestras de [data] en el mismo arreglo. Con el ecualizador apagado no toca nada. */
+    /**
+     * Ajusta el volumen y ecualiza [count] muestras de [data] en el mismo arreglo. Con el
+     * ecualizador apagado y sin ajuste de volumen no toca nada.
+     */
     fun process(
         data: FloatArray,
         count: Int,
     ) {
-        if (!active || channels <= 0) return
+        if (channels <= 0) return
+        if (!active && gain == 1.0 && current == 1.0) return
         val chs = channels
-        val g = gain
+        val on = active
         val n = coefs.size
+        var g = current
+        val target = gain
         var ch = 0
         for (i in 0 until count) {
+            if (ch == 0 && g != target) {
+                g += (target - g) * glide
+                if (abs(target - g) < 1e-5) g = target
+            }
             var v = data[i] * g
+            if (!on) {
+                data[i] = v.toFloat()
+                ch++
+                if (ch == chs) ch = 0
+                continue
+            }
             for (f in 0 until n) {
                 if (skip[f]) continue
                 val k = coefs[f]
@@ -106,6 +142,8 @@ class EqEngine {
             ch++
             if (ch == chs) ch = 0
         }
+        current = g
+        if (!on) return
         // Tras un silencio largo la memoria se llena de números diminutos que gastan procesador.
         for (j in z1.indices) {
             if (abs(z1[j]) < TINY) z1[j] = 0.0
@@ -115,6 +153,7 @@ class EqEngine {
 
     private companion object {
         const val TINY = 1e-25
+        const val GLIDE_SECONDS = 0.015
     }
 }
 

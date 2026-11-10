@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.SystemClock
 import androidx.media3.common.C
 import androidx.media3.common.PlaybackParameters
+import androidx.media3.common.Timeline
 import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.audio.AudioProcessorChain
 import androidx.media3.common.audio.BaseAudioProcessor
@@ -24,6 +25,9 @@ import kotlin.math.log10
  *  4. [OutputStage]: con "alta precisión" no hace nada y el audio llega a Android en float;
  *     sin ella lo pasa a 16 bits con dither.
  *
+ * "Volumen parejo": [ParametricEq] sabe qué canción viene en cada tramo de audio (ExoPlayer se lo
+ * dice al empezar el tramo) y le pide a [loudnessOf] lo fuerte que suena para ajustar el volumen.
+ *
  * Cada reproductor necesita su propia cadena (un AudioProcessor no se puede compartir): el
  * principal y el que suena unos segundos durante el fundido entre canciones. Todas leen los
  * mismos ajustes de [settings], que es inmutable y se cambia entero con [update].
@@ -35,6 +39,12 @@ class AudioEffects {
 
     /** Copia del audio para el visualizador (solo la llena el reproductor principal). */
     val analyzer = AudioAnalyzer()
+
+    /** Lo fuerte que suena una canción (por id), o null si todavía no se midió. Lo pone AppContainer. */
+    @Volatile var loudnessOf: (Long) -> Loudness? = { null }
+
+    /** La canción que suena, por si ExoPlayer no dice cuál viene en un tramo de audio. La pone el servicio. */
+    @Volatile var currentTrackId: Long? = null
 
     /** Cuántos dB está bajando el limitador ahora mismo (0 = no hace nada). */
     @Volatile var limiterReductionDb = 0f
@@ -51,7 +61,7 @@ class AudioEffects {
     fun newChain(analyze: Boolean = true): AudioProcessorChain {
         val read = { settings }
         val processors = ArrayList<AudioProcessor>()
-        processors += ParametricEq(read)
+        processors += ParametricEq(read) { id -> (id ?: currentTrackId)?.let { loudnessOf(it) } }
         processors += PeakLimiter(read, if (analyze) ::reportLimiter else null)
         if (analyze) processors += AnalyzerTap(analyzer)
         processors += OutputStage(read)
@@ -100,7 +110,7 @@ private fun readFloats(
 }
 
 /**
- * Preamplificador + ecualizador paramétrico ([EqEngine]).
+ * Volumen (preamplificador y volumen parejo) + ecualizador paramétrico ([EqEngine]).
  *
  * Recibe PCM de 16 bits (o float) y siempre entrega float: así lo que calcula el ecualizador
  * no se vuelve a recortar a 16 bits y queda espacio por encima del máximo para que el
@@ -109,8 +119,13 @@ private fun readFloats(
 @UnstableApi
 class ParametricEq(
     private val settings: () -> EqSettings,
+    private val loudness: (Long?) -> Loudness?,
 ) : BaseAudioProcessor() {
     private val engine = EqEngine()
+
+    // Lo fuerte que suena la canción de este tramo. Se fija al empezar el tramo y no cambia a
+    // mitad de canción, para que el volumen no salte si la medida llega mientras suena.
+    private var trackLoudness: Loudness? = null
     private var floats = FloatArray(0)
     private var shorts = ShortArray(0)
 
@@ -140,7 +155,7 @@ class ParametricEq(
             for (i in 0 until count) floats[i] = shorts[i] * (1f / 32768f)
         }
         if (format.channelCount > 0) {
-            engine.prepare(settings(), format.sampleRate, format.channelCount)
+            engine.prepare(settings(), trackLoudness, format.sampleRate, format.channelCount)
             engine.process(floats, count)
         }
         val out = replaceOutputBuffer(count * 4)
@@ -150,10 +165,22 @@ class ParametricEq(
 
     override fun onFlush(streamMetadata: AudioProcessor.StreamMetadata) {
         engine.clearMemory()
+        trackLoudness = runCatching { loudness(trackIdOf(streamMetadata)) }.getOrNull()
     }
 
     override fun onReset() {
         engine.clearMemory()
+    }
+
+    /** El id de la canción (el `mediaId` del elemento) a la que pertenece el tramo de audio que empieza. */
+    private fun trackIdOf(metadata: AudioProcessor.StreamMetadata): Long? {
+        val uid = metadata.periodUid ?: return null
+        val timeline = metadata.timeline
+        if (timeline.isEmpty) return null
+        val index = timeline.getIndexOfPeriod(uid)
+        if (index == C.INDEX_UNSET) return null
+        val window = timeline.getPeriod(index, Timeline.Period()).windowIndex
+        return timeline.getWindow(window, Timeline.Window()).mediaItem.mediaId.toLongOrNull()
     }
 }
 
@@ -172,7 +199,8 @@ class PeakLimiter(
     private val core = LookaheadLimiter()
     private var floats = FloatArray(0)
 
-    private fun isOn(): Boolean = settings().let { it.enabled && it.limiter }
+    // Hace falta cuando algo puede subir el volumen: el ecualizador o el volumen parejo.
+    private fun isOn(): Boolean = settings().let { it.limiter && (it.enabled || it.normalize) }
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat =
         if (inputAudioFormat.encoding == C.ENCODING_PCM_FLOAT) inputAudioFormat else AudioProcessor.AudioFormat.NOT_SET

@@ -7,6 +7,7 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.Timeline
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.CacheBitmapLoader
@@ -86,6 +87,35 @@ class PlaybackService : MediaSessionService() {
         // Fundido entre canciones: lee los segundos de Ajustes. No se usa con el temporizador
         // "al terminar la canción", porque ese necesita que la canción termine sola.
         serviceScope.launch { app.settings.flow.collect { crossfadeMs = it.crossfadeSec * 1000L } }
+
+        // Volumen parejo: el motor necesita saber qué canción suena, y las que vienen se miden antes.
+        val announce = {
+            app.audioEffects.currentTrackId = player.currentMediaItem?.mediaId?.toLongOrNull()
+            val upcoming = ArrayList<Long>()
+            var index = player.currentMediaItemIndex
+            repeat(4) {
+                if (index != C.INDEX_UNSET && index < player.mediaItemCount) {
+                    player.getMediaItemAt(index).mediaId.toLongOrNull()?.let { upcoming += it }
+                    index = player.currentTimeline.getNextWindowIndex(index, Player.REPEAT_MODE_OFF, player.shuffleModeEnabled)
+                }
+            }
+            app.loudnessScanner.prioritize(upcoming)
+        }
+        player.addListener(
+            object : Player.Listener {
+                override fun onMediaItemTransition(
+                    mediaItem: MediaItem?,
+                    reason: Int,
+                ) = announce()
+
+                override fun onTimelineChanged(
+                    timeline: Timeline,
+                    reason: Int,
+                ) = announce()
+
+                override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) = announce()
+            },
+        )
 
         // "Alta precisión" se decide cuando se configura la salida de audio. Al cambiarla se
         // reinicia la reproducción (misma canción, mismo punto) para que tome efecto enseguida.

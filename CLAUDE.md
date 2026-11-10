@@ -26,6 +26,8 @@ app/src/main/java/com/bismopower/app/
   BismoApp.kt              AppContainer (db, ajustes, biblioteca, reproductor, efectos)
   audio/AudioEffects.kt    Motor: cadena de AudioProcessor (EQ → limitador → analizador → salida) + RenderersFactory
   audio/Dsp.kt             Las cuentas, sin Android: EqEngine, LookaheadLimiter, Dither
+  audio/Loudness.kt        Medidor de sonoridad (LUFS, norma BS.1770) y cuánto subir/bajar cada canción
+  library/LoudnessScanner  LoudnessStore (caché en archivo) + medición de canciones en segundo plano
   audio/Biquad.kt          Fórmulas de los filtros (Audio EQ Cookbook) y respuesta en dB
   audio/EqSettings.kt      Ajustes del ecualizador (inmutables), presets, guardar/leer como texto
   data/EqRepository.kt     Estado del ecualizador: lo guarda (DataStore "equalizer") y lo aplica
@@ -284,8 +286,28 @@ Reglas:
 - Probar el motor sin Android: `Dsp.kt` no depende de nada; se compila con kotlinc y se le
   pasan tonos (así se midió lo de arriba)
 
+**Volumen parejo (normalización)**
+- `LoudnessMeter` mide la sonoridad en LUFS (filtro K, bloques de 400 ms, dos puertas). Probado
+  con el tono de la norma: 1 kHz estéreo a −23 dBFS da −23,0
+- `LoudnessScanner` mide con MediaExtractor + MediaCodec en un hilo propio de prioridad mínima:
+  tres trozos de 20 s (15 %, 45 %, 75 %; las de menos de 75 s completas). Primero las que van a
+  sonar (`prioritize`, lo llama `PlaybackService`) y luego toda la biblioteca. Solo trabaja con
+  `EqSettings.normalize` encendido. `progress` alimenta el texto de la tarjeta "Calidad"
+- `LoudnessStore` es una caché en `filesDir/loudness.tsv` (id, LUFS, pico), a propósito fuera
+  de Room: se puede recalcular y así no hay migración. Las canciones que no se pudieron leer
+  no se guardan en el archivo (se reintentan al volver a abrir la app)
+- Ganancia: `normalizationGainDb` lleva cada canción a `TARGET_LUFS` (−10). Bajar siempre;
+  subir solo hasta 3 dB por encima de su pico con limitador (0 sin él). Canción sin medir = 0 dB
+- Cómo sabe el motor qué canción suena: `ParametricEq.onFlush(StreamMetadata)` recibe la línea
+  de tiempo y el período del tramo que empieza (ExoPlayer reconfigura y vacía la cadena en cada
+  canción) y saca el `mediaId`. Si no viene, usa `AudioEffects.currentTrackId` (lo pone el
+  servicio). La medida se fija al empezar el tramo: no cambia a mitad de canción
+- `EqEngine` aplica preamp + volumen parejo como una sola ganancia que persigue al objetivo en
+  ~15 ms (sin clics al cambiar de canción ni al mover el preamp). El volumen parejo funciona
+  aunque el ecualizador esté apagado; el limitador se activa si hay EQ o volumen parejo
+
 **Ideas para después**
-- Normalizar el volumen entre canciones (medir cada canción en segundo plano, guardar en Room)
+- Volumen parejo por álbum (que un álbum conserve sus diferencias) y elegir el nivel objetivo
 - AudioSink propio para decodificar en float (FLAC de 24 bits de punta a punta)
 - Reanudar la última cola al abrir (onPlaybackResumption) y que el widget pueda arrancarla
 - Motor nativo (C++/Oboe), onda real en el reproductor, presets propios del ecualizador

@@ -33,6 +33,8 @@ data class EqSettings(
     val autoPreamp: Boolean = true,
     /** Entrega el audio a Android en 32 bits (float) en vez de recortarlo a 16 bits. */
     val hiRes: Boolean = true,
+    /** Volumen parejo: sube o baja cada canción para que todas suenen igual de fuerte. */
+    val normalize: Boolean = true,
 ) {
     /**
      * Cuántos dB sube, como mucho, la curva completa (bandas + graves + agudos). Es el espacio
@@ -81,6 +83,7 @@ data class EqSettings(
             // Campos nuevos al final: los ajustes guardados por versiones viejas se siguen leyendo.
             append('|').append(if (autoPreamp) 1 else 0)
             append('|').append(if (hiRes) 1 else 0)
+            append('|').append(if (normalize) 1 else 0)
         }
 
     companion object {
@@ -117,6 +120,7 @@ data class EqSettings(
                     bands = bands,
                     autoPreamp = p.getOrNull(8)?.let { it == "1" } ?: true,
                     hiRes = p.getOrNull(9)?.let { it == "1" } ?: true,
+                    normalize = p.getOrNull(10)?.let { it == "1" } ?: true,
                 )
             }.getOrNull()
         }

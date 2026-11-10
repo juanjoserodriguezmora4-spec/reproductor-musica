@@ -11,6 +11,8 @@ import com.bismopower.app.data.EqRepository
 import com.bismopower.app.data.SettingsRepository
 import com.bismopower.app.data.db.BismoDatabase
 import com.bismopower.app.library.LibraryRepository
+import com.bismopower.app.library.LoudnessScanner
+import com.bismopower.app.library.LoudnessStore
 import com.bismopower.app.library.LyricsRepository
 import com.bismopower.app.library.PlaylistRepository
 import com.bismopower.app.library.TrackArtFetcher
@@ -19,6 +21,9 @@ import com.bismopower.app.player.SleepTimer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 
 class BismoApp :
     Application(),
@@ -65,6 +70,26 @@ class AppContainer(
 
     /** Ajustes del ecualizador: los guarda y se los pasa al motor de audio. */
     val equalizer = EqRepository(app, appScope) { audioEffects.update(it) }
+
+    /** Lo fuerte que suena cada canción (para "Volumen parejo") y quien lo mide en segundo plano. */
+    val loudness = LoudnessStore(app)
+    val loudnessScanner = LoudnessScanner(app, loudness, appScope)
+
+    init {
+        audioEffects.loudnessOf = { id -> loudness[id] }
+        appScope.launch {
+            equalizer.state
+                .map { it.normalize }
+                .distinctUntilChanged()
+                .collect { loudnessScanner.setEnabled(it) }
+        }
+        appScope.launch {
+            library.tracks
+                .map { list -> list.map { it.id } }
+                .distinctUntilChanged()
+                .collect { loudnessScanner.setLibrary(it) }
+        }
+    }
 }
 
 val Context.container: AppContainer

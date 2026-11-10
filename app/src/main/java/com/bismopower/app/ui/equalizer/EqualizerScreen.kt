@@ -236,7 +236,7 @@ fun EqualizerScreen() {
 
             ToneCard(eq, repo::setPreamp, repo::setBass, repo::setTreble) { touching = it }
 
-            QualityCard(eq, repo::setAutoPreamp, repo::setLimiter, repo::setHiRes)
+            QualityCard(eq, repo::setNormalize, repo::setAutoPreamp, repo::setLimiter, repo::setHiRes)
 
             PrimaryButton(
                 "Dejar todo plano",
@@ -767,16 +767,18 @@ private fun ToneCard(
     }
 }
 
-/** Calidad del sonido: preamp automático, limitador (con su medidor) y salida de alta precisión. */
+/** Calidad del sonido: volumen parejo, preamp automático, limitador (con su medidor) y alta precisión. */
 @Composable
 private fun QualityCard(
     eq: EqSettings,
+    onNormalize: (Boolean) -> Unit,
     onAutoPreamp: (Boolean) -> Unit,
     onLimiter: (Boolean) -> Unit,
     onHiRes: (Boolean) -> Unit,
 ) {
     val c = LocalBismo.current
     val limiting = limiterDb()
+    val measured by LocalContext.current.container.loudnessScanner.progress.collectAsStateWithLifecycle()
     Column(
         Modifier
             .fillMaxWidth()
@@ -785,6 +787,21 @@ private fun QualityCard(
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Text("Calidad", style = T.h2, color = c.text)
+        SwitchRow(
+            icon = BI.Music,
+            title = "Volumen parejo",
+            detail =
+                when {
+                    !eq.normalize || measured.total == 0 -> "Hace que todas las canciones suenen igual de fuerte"
+                    measured.done < measured.total ->
+                        "Midiendo tus canciones: ${measured.done} de ${measured.total}. Cada una se ajusta la próxima vez que suene"
+                    measured.failed > 0 ->
+                        "Listo: ${measured.total - measured.failed} canciones medidas (${measured.failed} no se pudieron leer)"
+                    else -> "Listo: ${measured.total} canciones medidas"
+                },
+            checked = eq.normalize,
+            onChange = onNormalize,
+        )
         SwitchRow(
             icon = BI.Sliders,
             title = "Preamp automático",
