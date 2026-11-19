@@ -23,11 +23,16 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
@@ -49,6 +54,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -75,17 +81,21 @@ import com.bismopower.app.library.trackArtUri
 import com.bismopower.app.ui.common.BI
 import com.bismopower.app.ui.common.Corners
 import com.bismopower.app.ui.common.EmptyState
+import com.bismopower.app.ui.common.FastScroller
 import com.bismopower.app.ui.common.IconChip
 import com.bismopower.app.ui.common.ListRow
 import com.bismopower.app.ui.common.LocalSelection
 import com.bismopower.app.ui.common.PrimaryButton
+import com.bismopower.app.ui.common.RowArt
 import com.bismopower.app.ui.common.Segmented
 import com.bismopower.app.ui.common.SelectCircle
 import com.bismopower.app.ui.common.Thumb
 import com.bismopower.app.ui.common.fmtDuration
 import com.bismopower.app.ui.common.glass
 import com.bismopower.app.ui.common.glassSegment
+import com.bismopower.app.ui.common.nowPlaying
 import com.bismopower.app.ui.common.plural
+import com.bismopower.app.ui.common.rememberScrollSource
 import com.bismopower.app.ui.sheets.LocalSheets
 import com.bismopower.app.ui.sheets.Sheet
 import com.bismopower.app.ui.sheets.TrackMoreButton
@@ -130,6 +140,8 @@ fun LibraryScreen(onOpenFolders: () -> Unit = {}) {
     var searching by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     val selection = LocalSelection.current
+    // Las posiciones de cada lista viven aquí: al volver de un álbum sigues donde estabas.
+    val lists = rememberLibraryLists()
     // Al cambiar de lista, la selección empieza de cero.
     LaunchedEffect(detail, searching, section) { selection.clear() }
 
@@ -179,7 +191,14 @@ fun LibraryScreen(onOpenFolders: () -> Unit = {}) {
                     onOpen = { detail = it },
                 )
             } else {
-                SectionsWithRefresh(section, { section = it }, onOpen = { detail = it }, onOpenFolders = onOpenFolders, onSearch = { searching = true })
+                SectionsWithRefresh(
+                    section,
+                    { section = it },
+                    lists,
+                    onOpen = { detail = it },
+                    onOpenFolders = onOpenFolders,
+                    onSearch = { searching = true },
+                )
             }
         } else {
             DetailScreen(d, onBack = { detail = null })
@@ -192,6 +211,7 @@ fun LibraryScreen(onOpenFolders: () -> Unit = {}) {
 private fun SectionsWithRefresh(
     section: Int,
     onSection: (Int) -> Unit,
+    lists: LibraryLists,
     onOpen: (Detail) -> Unit,
     onOpenFolders: () -> Unit,
     onSearch: () -> Unit,
@@ -227,14 +247,31 @@ private fun SectionsWithRefresh(
             )
         },
     ) {
-        Sections(section, onSection, onOpen, onOpenFolders, onSearch)
+        Sections(section, onSection, lists, onOpen, onOpenFolders, onSearch)
     }
 }
 
+/** Dónde va cada lista de la Biblioteca. Se crean una vez para que no pierdan su posición. */
+private class LibraryLists(
+    val songs: LazyListState,
+    val albums: LazyGridState,
+    val artists: LazyListState,
+    val folders: LazyListState,
+)
+
+@Composable
+private fun rememberLibraryLists() =
+    LibraryLists(rememberLazyListState(), rememberLazyGridState(), rememberLazyListState(), rememberLazyListState())
+
+/**
+ * Las cuatro secciones de la Biblioteca. El encabezado queda fijo arriba y las secciones se
+ * cambian tocando las pestañas o deslizando el dedo a los lados (← Álbumes, → Canciones).
+ */
 @Composable
 private fun Sections(
     section: Int,
     onSection: (Int) -> Unit,
+    lists: LibraryLists,
     onOpen: (Detail) -> Unit,
     onOpenFolders: () -> Unit,
     onSearch: () -> Unit,
@@ -243,10 +280,6 @@ private fun Sections(
     val tracks by app.library.tracks.collectAsState(initial = null)
     val scanning by app.library.scanning.collectAsStateWithLifecycle()
     val list = tracks
-
-    val header: @Composable () -> Unit = {
-        LibraryHeader(section, onSection, list?.size ?: 0, onOpenFolders, onSearch)
-    }
 
     when {
         list == null -> Box(Modifier.fillMaxSize())
@@ -259,7 +292,7 @@ private fun Sections(
                     .statusBarsPadding()
                     .padding(horizontal = 16.dp, vertical = 14.dp),
             ) {
-                header()
+                LibraryHeader(section, onSection, 0, onOpenFolders, onSearch)
                 Spacer(Modifier.height(14.dp))
                 if (scanning) {
                     EmptyState(BI.Search, "Buscando música…", "Revisando las canciones de tu teléfono.")
@@ -276,10 +309,42 @@ private fun Sections(
                     PrimaryButton("Elegir carpetas", onOpenFolders, Modifier.fillMaxWidth(), icon = BI.Folder)
                 }
             }
-        section == 0 -> SongsSection(list, header)
-        section == 1 -> AlbumsSection(header, onOpen)
-        section == 2 -> ArtistsSection(header, onOpen)
-        else -> FoldersSection(header, onOpen)
+        else -> {
+            val pager = rememberPagerState(initialPage = section) { SECTIONS.size }
+            val scope = rememberCoroutineScope()
+            val current by app.player.state.collectAsStateWithLifecycle()
+            // La canción que suena, para marcar su álbum, artista o carpeta.
+            val playing = remember(list, current.currentId) { list.firstOrNull { it.id == current.currentId } }
+            // Se guarda la sección cuando el deslizamiento termina.
+            LaunchedEffect(pager) { snapshotFlow { pager.settledPage }.collect { onSection(it) } }
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding(),
+            ) {
+                Box(Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp)) {
+                    LibraryHeader(
+                        pager.currentPage,
+                        { page -> scope.launch { pager.animateScrollToPage(page) } },
+                        list.size,
+                        onOpenFolders,
+                        onSearch,
+                    )
+                }
+                HorizontalPager(
+                    state = pager,
+                    modifier = Modifier.fillMaxSize(),
+                    key = { it },
+                ) { page ->
+                    when (page) {
+                        0 -> SongsSection(list, lists.songs)
+                        1 -> AlbumsSection(lists.albums, playing, onOpen)
+                        2 -> ArtistsSection(lists.artists, playing, onOpen)
+                        else -> FoldersSection(lists.folders, playing, onOpen)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -309,10 +374,24 @@ private fun LibraryHeader(
 
 private val listPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 14.dp, bottom = BOTTOM_SPACE)
 
+/** Las listas de las pestañas: el encabezado ya está arriba, fijo. */
+private val pagePadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = BOTTOM_SPACE)
+
+/** Dónde va la barra rápida: entre el encabezado y el mini reproductor. */
+private fun Modifier.scrollerPlace(top: androidx.compose.ui.unit.Dp = 8.dp): Modifier = this.padding(top = top, bottom = BOTTOM_SPACE - 22.dp, end = 2.dp)
+
+/** Primera letra para la burbuja de la barra rápida ("#" si empieza con número o símbolo). */
+private fun initial(text: String): String {
+    val first = fold(text.trim()).firstOrNull() ?: return "#"
+    return if (first.isLetter()) first.uppercaseChar().toString() else "#"
+}
+
+private val monthYear = java.text.SimpleDateFormat("MMM yyyy", java.util.Locale.forLanguageTag("es-CO"))
+
 @Composable
 private fun SongsSection(
     tracks: List<TrackEntity>,
-    header: @Composable () -> Unit,
+    state: LazyListState,
 ) {
     val app = LocalContext.current.container
     val scope = rememberCoroutineScope()
@@ -324,26 +403,45 @@ private fun SongsSection(
     val sorted = remember(tracks, sort, seed) { tracks.sortedFor(sort, seed) }
     val selection = LocalSelection.current
     SideEffect { selection.visible = sorted }
-    LazyColumn(
-        Modifier
-            .fillMaxSize()
-            .statusBarsPadding(),
-        contentPadding = listPadding,
-    ) {
-        item(key = "header") { header() }
-        item(key = "actions") {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 14.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                // Siempre en orden (sin el modo aleatorio del reproductor): primero la 1, luego la 2…
-                PrimaryButton("Reproducir", { app.player.play(sorted, 0) }, Modifier.weight(1f), icon = BI.Play)
-                SortButton(sort, onPick = { scope.launch { app.settings.setSongSort(it.id) } })
+    val playingAt = remember(sorted, current.currentId) { sorted.indexOfFirst { it.id == current.currentId } }
+    Box(Modifier.fillMaxSize()) {
+        LazyColumn(
+            Modifier.fillMaxSize(),
+            state = state,
+            contentPadding = pagePadding,
+        ) {
+            item(key = "actions") {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp, bottom = 14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    // Siempre en orden (sin el modo aleatorio del reproductor): primero la 1, luego la 2…
+                    PrimaryButton("Reproducir", { app.player.play(sorted, 0) }, Modifier.weight(1f), icon = BI.Play)
+                    SortButton(sort, onPick = { scope.launch { app.settings.setSongSort(it.id) } })
+                }
             }
+            trackItems(sorted, current.currentId)
         }
-        trackItems(sorted, current.currentId)
+        // La fila 0 es la de "Reproducir"; las canciones empiezan en la 1.
+        FastScroller(
+            rememberScrollSource(state),
+            Modifier.align(Alignment.TopEnd).scrollerPlace(),
+            label = { i ->
+                val t = sorted.getOrNull(i - 1)
+                when {
+                    t == null -> null
+                    sort == SongSort.TITLE -> initial(t.title)
+                    sort == SongSort.ARTIST -> t.artist
+                    sort == SongSort.ALBUM -> t.album
+                    sort == SongSort.DATE -> monthYear.format(java.util.Date(t.dateAdded * 1000L))
+                    sort == SongSort.DURATION -> fmtDuration(t.durationMs)
+                    else -> "$i de ${sorted.size}"
+                }
+            },
+            marker = if (playingAt >= 0) playingAt + 1 else null,
+        )
     }
 }
 
@@ -401,7 +499,9 @@ private fun LazyListScope.trackItems(
                         Text(if (t.trackNumber > 0) "${t.trackNumber}" else "·", style = T.small, color = c.muted)
                     }
                 } else {
-                    Thumb(t.artUri(), t.artKey(), Modifier.size(44.dp), corner = 10.dp, icon = BI.Music)
+                    RowArt(currentId == t.id, 10.dp) {
+                        Thumb(t.artUri(), t.artKey(), Modifier.size(44.dp), corner = 10.dp, icon = BI.Music)
+                    }
                 }
             },
             trailing = {
@@ -422,35 +522,47 @@ private fun LazyListScope.trackItems(
 
 @Composable
 private fun AlbumsSection(
-    header: @Composable () -> Unit,
+    state: LazyGridState,
+    playing: TrackEntity?,
     onOpen: (Detail) -> Unit,
 ) {
     val app = LocalContext.current.container
     val albums by app.library.albums.collectAsState(initial = emptyList())
-    LazyVerticalGrid(
-        columns = GridCells.Adaptive(150.dp),
-        modifier =
-            Modifier
-                .fillMaxSize()
-                .statusBarsPadding(),
-        contentPadding = listPadding,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        item(key = "header", span = { GridItemSpan(maxLineSpan) }) { Column(Modifier.padding(bottom = 2.dp)) { header() } }
-        items(albums, key = { it.albumId }) { a -> AlbumCard(a) { onOpen(Detail.Album(a.albumId, a.album, a.artist)) } }
+    val playingAt = remember(albums, playing) { albums.indexOfFirst { it.albumId == playing?.albumId } }
+    Box(Modifier.fillMaxSize()) {
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(150.dp),
+            modifier = Modifier.fillMaxSize(),
+            state = state,
+            contentPadding = listPadding,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            itemsIndexed(albums, key = { _, a -> a.albumId }) { i, a ->
+                AlbumCard(a, playing = i == playingAt) { onOpen(Detail.Album(a.albumId, a.album, a.artist)) }
+            }
+        }
+        FastScroller(
+            rememberScrollSource(state),
+            Modifier.align(Alignment.TopEnd).scrollerPlace(),
+            minItems = 16,
+            label = { i -> albums.getOrNull(i)?.let { initial(it.album) } },
+            marker = playingAt.takeIf { it >= 0 },
+        )
     }
 }
 
 @Composable
 private fun AlbumCard(
     a: AlbumRow,
+    playing: Boolean,
     onClick: () -> Unit,
 ) {
     val c = LocalBismo.current
     Column(
         Modifier
             .glass()
+            .then(if (playing) Modifier.nowPlaying(c, Corners.card) else Modifier)
             .clickable { onClick() }
             .padding(8.dp),
     ) {
@@ -478,19 +590,29 @@ private fun AlbumCard(
 
 @Composable
 private fun ArtistsSection(
-    header: @Composable () -> Unit,
+    state: LazyListState,
+    playing: TrackEntity?,
     onOpen: (Detail) -> Unit,
 ) {
     val app = LocalContext.current.container
     val artists by app.library.artists.collectAsState(initial = emptyList())
-    LazyColumn(
-        Modifier
-            .fillMaxSize()
-            .statusBarsPadding(),
-        contentPadding = listPadding,
-    ) {
-        item(key = "header") { Column(Modifier.padding(bottom = 14.dp)) { header() } }
-        itemsIndexed(artists, key = { _, a -> a.artist }) { i, a -> ArtistRowItem(a, i, artists.size) { onOpen(Detail.Artist(a.artist)) } }
+    val playingAt = remember(artists, playing) { artists.indexOfFirst { it.artist == playing?.artist } }
+    Box(Modifier.fillMaxSize()) {
+        LazyColumn(
+            Modifier.fillMaxSize(),
+            state = state,
+            contentPadding = listPadding,
+        ) {
+            itemsIndexed(artists, key = { _, a -> a.artist }) { i, a ->
+                ArtistRowItem(a, i, artists.size, playing = i == playingAt) { onOpen(Detail.Artist(a.artist)) }
+            }
+        }
+        FastScroller(
+            rememberScrollSource(state),
+            Modifier.align(Alignment.TopEnd).scrollerPlace(),
+            label = { i -> artists.getOrNull(i)?.let { initial(it.artist) } },
+            marker = playingAt.takeIf { it >= 0 },
+        )
     }
 }
 
@@ -499,9 +621,11 @@ private fun ArtistRowItem(
     a: ArtistRow,
     index: Int,
     count: Int,
+    playing: Boolean = false,
     onClick: () -> Unit,
 ) {
     ListRow(
+        highlight = playing,
         title = a.artist,
         subtitle = "${plural(a.albums, "álbum", "álbumes")} · ${plural(a.count, "canción", "canciones")}",
         leading = { Thumb(trackArtUri(a.firstTrackId, a.albumId), a.artist, Modifier.size(44.dp), corner = 22.dp, icon = BI.User) },
@@ -516,19 +640,29 @@ private fun ArtistRowItem(
 
 @Composable
 private fun FoldersSection(
-    header: @Composable () -> Unit,
+    state: LazyListState,
+    playing: TrackEntity?,
     onOpen: (Detail) -> Unit,
 ) {
     val app = LocalContext.current.container
     val folders by app.library.folders.collectAsState(initial = emptyList())
-    LazyColumn(
-        Modifier
-            .fillMaxSize()
-            .statusBarsPadding(),
-        contentPadding = listPadding,
-    ) {
-        item(key = "header") { Column(Modifier.padding(bottom = 14.dp)) { header() } }
-        itemsIndexed(folders, key = { _, f -> f.folder }) { i, f -> FolderRowItem(f, i, folders.size) { onOpen(Detail.Folder(f.folder)) } }
+    val playingAt = remember(folders, playing) { folders.indexOfFirst { it.folder == playing?.folder } }
+    Box(Modifier.fillMaxSize()) {
+        LazyColumn(
+            Modifier.fillMaxSize(),
+            state = state,
+            contentPadding = listPadding,
+        ) {
+            itemsIndexed(folders, key = { _, f -> f.folder }) { i, f ->
+                FolderRowItem(f, i, folders.size, playing = i == playingAt) { onOpen(Detail.Folder(f.folder)) }
+            }
+        }
+        FastScroller(
+            rememberScrollSource(state),
+            Modifier.align(Alignment.TopEnd).scrollerPlace(),
+            label = { i -> folders.getOrNull(i)?.let { initial(File(it.folder).name.ifBlank { it.folder }) } },
+            marker = playingAt.takeIf { it >= 0 },
+        )
     }
 }
 
@@ -537,10 +671,12 @@ private fun FolderRowItem(
     f: FolderRow,
     index: Int,
     count: Int,
+    playing: Boolean = false,
     onClick: () -> Unit,
 ) {
     val name = File(f.folder).name.ifBlank { f.folder }
     ListRow(
+        highlight = playing,
         title = name,
         subtitle = "${plural(f.count, "canción", "canciones")} · ${f.folder}",
         leading = { Thumb(null, name, Modifier.size(44.dp), corner = 10.dp, icon = BI.Folder) },
@@ -573,52 +709,66 @@ private fun DetailScreen(
     val selection = LocalSelection.current
     SideEffect { selection.visible = tracks }
     val current by app.player.state.collectAsStateWithLifecycle()
+    val state = rememberLazyListState()
+    val playingAt = remember(tracks, current.currentId) { tracks.indexOfFirst { it.id == current.currentId } }
 
-    LazyColumn(
+    Box(
         Modifier
             .fillMaxSize()
             .statusBarsPadding(),
-        contentPadding = listPadding,
     ) {
-        item(key = "top") {
-            Column(Modifier.fillMaxWidth()) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconChip(BI.Back, onBack, description = "Volver")
-                    Spacer(Modifier.weight(1f))
-                    // En un álbum: traer canciones que quedaron en otro (por ejemplo en "Música").
-                    if (d is Detail.Album) {
-                        val sheets = LocalSheets.current
-                        IconChip(BI.Plus, { sheets.open(Sheet.AddToAlbum(d.id, d.title, d.artist)) }, description = "Añadir canciones a este álbum")
-                    }
-                }
-                Spacer(Modifier.height(16.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    val art = tracks.firstOrNull()?.artUri()
-                    val icon =
-                        when (d) {
-                            is Detail.Album -> BI.Disc
-                            is Detail.Artist -> BI.User
-                            is Detail.Folder -> BI.Folder
+        LazyColumn(
+            Modifier.fillMaxSize(),
+            state = state,
+            contentPadding = listPadding,
+        ) {
+            item(key = "top") {
+                Column(Modifier.fillMaxWidth()) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconChip(BI.Back, onBack, description = "Volver")
+                        Spacer(Modifier.weight(1f))
+                        // En un álbum: traer canciones que quedaron en otro (por ejemplo en "Música").
+                        if (d is Detail.Album) {
+                            val sheets = LocalSheets.current
+                            IconChip(BI.Plus, { sheets.open(Sheet.AddToAlbum(d.id, d.title, d.artist)) }, description = "Añadir canciones a este álbum")
                         }
-                    Thumb(
-                        if (d is Detail.Folder) null else art,
-                        d.title,
-                        Modifier.size(112.dp),
-                        corner = if (d is Detail.Artist) 56.dp else 20.dp,
-                        icon = icon,
-                    )
-                    Spacer(Modifier.width(16.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(d.title, style = T.big, color = c.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        if (d is Detail.Album) Text(d.artist, style = T.body, color = c.muted, maxLines = 1)
-                        Spacer(Modifier.height(4.dp))
-                        Text("${plural(tracks.size, "canción", "canciones")} · ${fmtDuration(total)}", style = T.small, color = c.muted)
                     }
+                    Spacer(Modifier.height(16.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        val art = tracks.firstOrNull()?.artUri()
+                        val icon =
+                            when (d) {
+                                is Detail.Album -> BI.Disc
+                                is Detail.Artist -> BI.User
+                                is Detail.Folder -> BI.Folder
+                            }
+                        Thumb(
+                            if (d is Detail.Folder) null else art,
+                            d.title,
+                            Modifier.size(112.dp),
+                            corner = if (d is Detail.Artist) 56.dp else 20.dp,
+                            icon = icon,
+                        )
+                        Spacer(Modifier.width(16.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(d.title, style = T.big, color = c.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            if (d is Detail.Album) Text(d.artist, style = T.body, color = c.muted, maxLines = 1)
+                            Spacer(Modifier.height(4.dp))
+                            Text("${plural(tracks.size, "canción", "canciones")} · ${fmtDuration(total)}", style = T.small, color = c.muted)
+                        }
+                    }
+                    PlayButtons(tracks, Modifier.padding(vertical = 16.dp))
                 }
-                PlayButtons(tracks, Modifier.padding(vertical = 16.dp))
             }
+            trackItems(tracks, current.currentId, numbered = d is Detail.Album)
         }
-        trackItems(tracks, current.currentId, numbered = d is Detail.Album)
+        // La fila 0 es la cabecera; las canciones empiezan en la 1.
+        FastScroller(
+            rememberScrollSource(state),
+            Modifier.align(Alignment.TopEnd).scrollerPlace(top = 150.dp),
+            label = { i -> tracks.getOrNull(i - 1)?.let { initial(it.title) } },
+            marker = if (playingAt >= 0) playingAt + 1 else null,
+        )
     }
 }
 

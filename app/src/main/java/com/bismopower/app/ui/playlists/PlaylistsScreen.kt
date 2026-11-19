@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
@@ -51,15 +52,19 @@ import com.bismopower.app.library.artUri
 import com.bismopower.app.library.trackArtUri
 import com.bismopower.app.ui.common.BI
 import com.bismopower.app.ui.common.EmptyState
+import com.bismopower.app.ui.common.FastScroller
 import com.bismopower.app.ui.common.IconChip
+import com.bismopower.app.ui.common.RowArt
 import com.bismopower.app.ui.common.Thumb
 import com.bismopower.app.ui.common.dragHandle
 import com.bismopower.app.ui.common.fmtDuration
 import com.bismopower.app.ui.common.glass
 import com.bismopower.app.ui.common.glassSegment
 import com.bismopower.app.ui.common.moved
+import com.bismopower.app.ui.common.nowPlaying
 import com.bismopower.app.ui.common.plural
 import com.bismopower.app.ui.common.rememberReorderState
+import com.bismopower.app.ui.common.rememberScrollSource
 import com.bismopower.app.ui.common.reorderItem
 import com.bismopower.app.ui.library.BOTTOM_SPACE
 import com.bismopower.app.ui.library.PlayButtons
@@ -298,125 +303,146 @@ private fun ListDetail(
     val reorder = rememberReorderState(ROW_HEIGHT)
     val tracks = order.map { it.track }
     val total = tracks.sumOf { it.durationMs }
+    val state = rememberLazyListState()
+    val playingAt = tracks.indexOfFirst { it.id == current.currentId }
 
-    LazyColumn(
+    Box(
         Modifier
             .fillMaxSize()
             .statusBarsPadding(),
-        contentPadding = listPadding,
-        userScrollEnabled = !reorder.dragging,
     ) {
-        item(key = "top") {
-            Column(Modifier.fillMaxWidth()) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconChip(BI.Back, onBack, description = "Volver")
-                    Spacer(Modifier.weight(1f))
-                    if (playlistId != null) {
-                        IconChip(BI.More, { sheets.open(Sheet.PlaylistMenu(playlistId, title)) }, description = "Opciones de la lista")
-                    }
-                }
-                Spacer(Modifier.height(16.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    val first = tracks.firstOrNull()
-                    Thumb(
-                        first?.artUri(),
-                        first?.artKey() ?: title,
-                        Modifier.size(112.dp),
-                        corner = 20.dp,
-                        icon =
-                            when (view) {
-                                ListView.Favorites -> BI.HeartFill
-                                ListView.MostPlayed -> BI.TrendUp
-                                ListView.Recent -> BI.History
-                                is ListView.User -> BI.ListMusic
-                            },
-                    )
-                    Spacer(Modifier.width(16.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(title, style = T.big, color = c.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            if (tracks.isEmpty()) "Vacía" else "${plural(tracks.size, "canción", "canciones")} · ${fmtDuration(total)}",
-                            style = T.small,
-                            color = c.muted,
-                        )
-                        if (playlistId != null && tracks.size > 1) {
-                            Text("Arrastra ≡ para cambiar el orden", style = T.tiny, color = c.muted)
+        LazyColumn(
+            Modifier.fillMaxSize(),
+            state = state,
+            contentPadding = listPadding,
+            userScrollEnabled = !reorder.dragging,
+        ) {
+            item(key = "top") {
+                Column(Modifier.fillMaxWidth()) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconChip(BI.Back, onBack, description = "Volver")
+                        Spacer(Modifier.weight(1f))
+                        if (playlistId != null) {
+                            IconChip(BI.More, { sheets.open(Sheet.PlaylistMenu(playlistId, title)) }, description = "Opciones de la lista")
                         }
                     }
+                    Spacer(Modifier.height(16.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        val first = tracks.firstOrNull()
+                        Thumb(
+                            first?.artUri(),
+                            first?.artKey() ?: title,
+                            Modifier.size(112.dp),
+                            corner = 20.dp,
+                            icon =
+                                when (view) {
+                                    ListView.Favorites -> BI.HeartFill
+                                    ListView.MostPlayed -> BI.TrendUp
+                                    ListView.Recent -> BI.History
+                                    is ListView.User -> BI.ListMusic
+                                },
+                        )
+                        Spacer(Modifier.width(16.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(title, style = T.big, color = c.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                if (tracks.isEmpty()) "Vacía" else "${plural(tracks.size, "canción", "canciones")} · ${fmtDuration(total)}",
+                                style = T.small,
+                                color = c.muted,
+                            )
+                            if (playlistId != null && tracks.size > 1) {
+                                Text("Arrastra ≡ para cambiar el orden", style = T.tiny, color = c.muted)
+                            }
+                        }
+                    }
+                    if (tracks.isNotEmpty()) PlayButtons(tracks, Modifier.padding(vertical = 16.dp))
                 }
-                if (tracks.isNotEmpty()) PlayButtons(tracks, Modifier.padding(vertical = 16.dp))
             }
-        }
 
-        if (entries != null && order.isEmpty()) {
-            item(key = "empty") {
-                EmptyState(
-                    when (view) {
-                        ListView.Favorites -> BI.Heart
-                        ListView.MostPlayed -> BI.TrendUp
-                        ListView.Recent -> BI.History
-                        is ListView.User -> BI.ListMusic
-                    },
-                    "Aquí no hay nada todavía",
-                    when (view) {
-                        ListView.Favorites -> "Toca el corazón en el reproductor o en el menú ⋯ de una canción."
-                        ListView.MostPlayed, ListView.Recent -> "Escucha música y aquí aparece. Una canción cuenta después de 30 segundos."
-                        is ListView.User -> "Añade canciones desde el menú ⋯ de cada canción o desde el reproductor."
-                    },
-                    Modifier.padding(top = 16.dp),
-                )
-            }
-        }
-
-        itemsIndexed(order, key = { _, e -> e.track.id }) { i, e ->
-            val t = e.track
-            val playing = current.currentId == t.id
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .reorderItem(reorder, i, order.size)
-                    .then(
-                        if (reorder.from == i) {
-                            Modifier.background(if (c.dark) Color(0xFF1C1C20) else Color.White, RoundedCornerShape(12.dp))
-                        } else {
-                            Modifier.glassSegment(i, order.size)
+            if (entries != null && order.isEmpty()) {
+                item(key = "empty") {
+                    EmptyState(
+                        when (view) {
+                            ListView.Favorites -> BI.Heart
+                            ListView.MostPlayed -> BI.TrendUp
+                            ListView.Recent -> BI.History
+                            is ListView.User -> BI.ListMusic
                         },
-                    ).clickable { app.player.play(tracks, i) }
-                    .padding(start = 12.dp, end = 2.dp)
-                    .height(ROW_HEIGHT),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Thumb(t.artUri(), t.artKey(), Modifier.size(44.dp), corner = 10.dp, icon = BI.Music)
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(t.title, style = T.title, color = if (playing) c.accent else c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    val plays = e.plays
-                    Text(
-                        if (plays != null) "${t.artist} · ${plural(plays, "vez", "veces")}" else "${t.artist} · ${fmtDuration(t.durationMs)}",
-                        style = T.tiny,
-                        color = c.muted,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                TrackMoreButton(t, playlistId)
-                if (playlistId != null) {
-                    Icon(
-                        BI.Grip,
-                        "Arrastra para mover ${t.title}",
-                        tint = c.muted,
-                        modifier =
-                            Modifier
-                                .size(44.dp)
-                                .dragHandle(reorder, i) { from, to ->
-                                    val newOrder = order.moved(from, to)
-                                    order = newOrder
-                                    app.appScope.launch { app.playlists.reorder(playlistId, newOrder.map { it.track.id }) }
-                                }.padding(11.dp),
+                        "Aquí no hay nada todavía",
+                        when (view) {
+                            ListView.Favorites -> "Toca el corazón en el reproductor o en el menú ⋯ de una canción."
+                            ListView.MostPlayed, ListView.Recent -> "Escucha música y aquí aparece. Una canción cuenta después de 30 segundos."
+                            is ListView.User -> "Añade canciones desde el menú ⋯ de cada canción o desde el reproductor."
+                        },
+                        Modifier.padding(top = 16.dp),
                     )
                 }
             }
+
+            itemsIndexed(order, key = { _, e -> e.track.id }) { i, e ->
+                val t = e.track
+                val playing = current.currentId == t.id
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .reorderItem(reorder, i, order.size)
+                        .then(
+                            if (reorder.from == i) {
+                                Modifier.background(if (c.dark) Color(0xFF1C1C20) else Color.White, RoundedCornerShape(12.dp))
+                            } else {
+                                Modifier.glassSegment(i, order.size)
+                            },
+                        ).clickable { app.player.play(tracks, i) }
+                        .height(ROW_HEIGHT)
+                        // La que suena se marca con un brillo; el alto de la fila no cambia (lo usa el reordenar).
+                        .padding(horizontal = 5.dp, vertical = 2.dp)
+                        .then(if (playing) Modifier.nowPlaying(c) else Modifier)
+                        .padding(start = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RowArt(playing, 10.dp) {
+                        Thumb(t.artUri(), t.artKey(), Modifier.size(44.dp), corner = 10.dp, icon = BI.Music)
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(t.title, style = T.title, color = if (playing) c.accent else c.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        val plays = e.plays
+                        Text(
+                            if (plays != null) "${t.artist} · ${plural(plays, "vez", "veces")}" else "${t.artist} · ${fmtDuration(t.durationMs)}",
+                            style = T.tiny,
+                            color = c.muted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    TrackMoreButton(t, playlistId)
+                    if (playlistId != null) {
+                        Icon(
+                            BI.Grip,
+                            "Arrastra para mover ${t.title}",
+                            tint = c.muted,
+                            modifier =
+                                Modifier
+                                    .size(44.dp)
+                                    .dragHandle(reorder, i) { from, to ->
+                                        val newOrder = order.moved(from, to)
+                                        order = newOrder
+                                        app.appScope.launch { app.playlists.reorder(playlistId, newOrder.map { it.track.id }) }
+                                    }.padding(11.dp),
+                        )
+                    }
+                }
+            }
+        }
+        // La fila 0 es la cabecera; las canciones empiezan en la 1.
+        if (!reorder.dragging) {
+            FastScroller(
+                rememberScrollSource(state),
+                Modifier.align(Alignment.TopEnd).padding(top = 150.dp, bottom = BOTTOM_SPACE - 22.dp, end = 2.dp),
+                label = { i -> tracks.getOrNull(i - 1)?.title?.trim()?.firstOrNull()?.uppercaseChar()?.toString() },
+                marker = if (playingAt >= 0) playingAt + 1 else null,
+            )
         }
     }
 }

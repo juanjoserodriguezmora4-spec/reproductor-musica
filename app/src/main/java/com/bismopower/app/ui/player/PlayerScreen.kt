@@ -267,6 +267,7 @@ fun PlayerScreen(
                                 player.seek(ms)
                                 position = ms
                             },
+                            onEdit = { s.currentId?.let { id -> sheets.open(Sheet.Lyrics(id, s.title, s.artist)) } },
                             modifier = Modifier.fillMaxSize(),
                         )
                     } else {

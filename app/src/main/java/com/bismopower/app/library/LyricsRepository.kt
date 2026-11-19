@@ -9,6 +9,9 @@ import android.provider.MediaStore
 import android.util.LruCache
 import com.bismopower.app.data.SettingsRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -19,6 +22,7 @@ import java.nio.ByteBuffer
 /**
  * Busca la letra de una canción, en este orden:
  *
+ * 0. La que el usuario pegó a mano en BismoPower (se guarda en `filesDir/lyrics/<id>.lrc`).
  * 1. Un archivo .lrc con el mismo nombre al lado de la canción (cancion.mp3 → cancion.lrc).
  *    Desde Android 11 las apps no pueden leer archivos que no son música, así que esto solo
  *    funciona en teléfonos más viejos; para los nuevos está el punto 2.
@@ -32,6 +36,12 @@ class LyricsRepository(
     private val cache = LruCache<Long, Lyrics>(40)
     private val missing = HashSet<Long>()
     private val mutex = Mutex()
+    private val pastedDir = File(context.filesDir, "lyrics")
+
+    private val _changes = MutableStateFlow(0)
+
+    /** Sube cada vez que se pega, cambia o quita una letra: la pantalla de la letra la vuelve a buscar. */
+    val changes: StateFlow<Int> = _changes.asStateFlow()
 
     /** Archivos .lrc de la carpeta de letras: nombre sin extensión (en minúsculas) → dirección. */
     private var index: Map<String, Uri>? = null
@@ -44,6 +54,46 @@ class LyricsRepository(
         cache.evictAll()
         index = null
         indexFor = null
+    }
+
+    private fun pastedFile(trackId: Long) = File(pastedDir, "$trackId.lrc")
+
+    /** El texto que el usuario pegó para esta canción, o null si no pegó ninguno. */
+    suspend fun pasted(trackId: Long): String? =
+        withContext(Dispatchers.IO) {
+            runCatching { pastedFile(trackId).takeIf { it.exists() }?.readText() }.getOrNull()
+        }
+
+    /**
+     * Guarda la letra pegada a mano. Si trae tiempos tipo `[01:23.45]` queda sincronizada.
+     * Devuelve false si el texto está vacío o no se pudo guardar.
+     */
+    suspend fun savePasted(
+        trackId: Long,
+        text: String,
+    ): Boolean =
+        withContext(Dispatchers.IO) {
+            if (LrcParser.parse(text, PASTED) == null) return@withContext false
+            val ok =
+                runCatching {
+                    pastedDir.mkdirs()
+                    pastedFile(trackId).writeText(text)
+                }.isSuccess
+            forget(trackId)
+            ok
+        }
+
+    /** Borra la letra pegada; vuelve a buscar en los archivos .lrc y en la canción. */
+    suspend fun removePasted(trackId: Long) =
+        withContext(Dispatchers.IO) {
+            runCatching { pastedFile(trackId).delete() }
+            forget(trackId)
+        }
+
+    private fun forget(trackId: Long) {
+        cache.remove(trackId)
+        synchronized(missing) { missing -= trackId }
+        _changes.value++
     }
 
     suspend fun forTrack(trackId: Long): Lyrics? =
@@ -69,6 +119,11 @@ class LyricsRepository(
                 }
             }
         val base = (displayName ?: path?.let { File(it).name })?.substringBeforeLast('.')
+
+        // 0. Pegada a mano en la app.
+        runCatching { pastedFile(trackId).takeIf { it.exists() }?.readText() }
+            .getOrNull()
+            ?.let { text -> LrcParser.parse(text, PASTED)?.let { return it } }
 
         // 1. Al lado de la canción.
         path?.let { p ->
@@ -156,9 +211,11 @@ class LyricsRepository(
         dirs.forEach { collect(tree, it, out, depth + 1) }
     }
 
-    private companion object {
-        const val HEAD_BYTES = 512 * 1024
-        const val TAIL_BYTES = 2 * 1024 * 1024
-        const val MAX_DEPTH = 4
+    companion object {
+        /** El [Lyrics.source] de las letras pegadas a mano. */
+        const val PASTED = "pegada a mano"
+        private const val HEAD_BYTES = 512 * 1024
+        private const val TAIL_BYTES = 2 * 1024 * 1024
+        private const val MAX_DEPTH = 4
     }
 }

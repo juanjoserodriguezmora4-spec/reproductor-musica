@@ -39,6 +39,7 @@ app/src/main/java/com/bismopower/app/
                            menú de lista, temporizador). Se abren con LocalSheets.current.open(...)
                            y las dibuja SheetHost al final de BismoRoot, encima de todo
   ui/common/Reorder.kt     Reordenar arrastrando el asa ≡ (filas de alto fijo)
+  ui/common/FastScroller   Barra rápida a la derecha de las listas (burbuja con letra + punto de la que suena)
   data/db/Playlists.kt     Tablas playlists, playlist_tracks, favorites, play_stats + PlaylistDao
   library/PlaylistRepository  Listas, favoritas, conteo de reproducciones
   player/PlayCounter       Cuenta una reproducción a los 30 s (o la mitad si es más corta)
@@ -318,6 +319,26 @@ Reglas:
   `EqSettings.spatialAmount`; el modo, `EqSettings.spatial` (campos 12 y 13 del texto guardado)
 - Tarjeta "Sonido 3D" en el ecualizador (fichas + perilla de intensidad). Los números de cada
   modo se afinaron midiendo, no oyendo: ajustarlos con lo que diga el usuario
+
+**Controles de las listas**
+- Canción que suena: `ListRow(highlight = true)` aplica `Modifier.nowPlaying(c)` (brillo de acento
+  desde la izquierda + borde que se apaga hacia la derecha, quieto) y `RowArt` pone el ícono de
+  ondas sobre la carátula. También en las listas de reproducción (dentro del alto fijo de la fila,
+  para no romper el reordenar) y en Álbumes/Artistas/Carpetas (el que contiene la que suena)
+- `FastScroller` (ui/common): asa a la derecha que aparece al mover la lista y se esconde 1,5 s
+  después; escondida no recibe toques (no tapa el ⋯). Arrastrar salta con `scrollToItem`; la
+  burbuja muestra la inicial, el artista, el álbum, el mes o la duración según el orden de
+  Canciones. El punto (`marker`) es la canción que suena; tocarlo lleva a ella. Se usa con
+  `rememberScrollSource(LazyListState | LazyGridState)`; solo sale con 30+ elementos (16 en Álbumes)
+- Biblioteca: el encabezado (título + pestañas) quedó fijo y las cuatro secciones van en un
+  `HorizontalPager` (deslizar ← → cambia de sección; tocar la pestaña anima hasta ella). Las
+  posiciones de cada lista viven en `LibraryLists`, creado fuera del `AnimatedContent` del
+  detalle: al volver de un álbum la lista sigue donde estaba
+- Letra pegada a mano: `Sheet.Lyrics` (desde el menú ⋯, el lápiz de la vista de letra o
+  "Pegar la letra" cuando no hay). Se guarda en `filesDir/lyrics/<id>.lrc` y gana a las demás
+  fuentes (`LyricsRepository.savePasted/removePasted/pasted`). Con tiempos `[mm:ss.xx]` queda
+  sincronizada. `LyricsRepository.changes` avisa a `LyricsView` para recargar. Al editar una
+  letra que vino de un .lrc o de la canción, se abre con ella (`Lyrics.toText()`)
 
 **Ideas para después**
 - Volumen parejo por álbum (que un álbum conserve sus diferencias) y elegir el nivel objetivo

@@ -79,8 +79,11 @@ import androidx.compose.ui.unit.sp
 import com.bismopower.app.container
 import com.bismopower.app.data.SettingsRepository
 import com.bismopower.app.data.db.TrackEntity
+import com.bismopower.app.library.LrcParser
+import com.bismopower.app.library.LyricsRepository
 import com.bismopower.app.library.artKey
 import com.bismopower.app.library.artUri
+import com.bismopower.app.library.toText
 import com.bismopower.app.library.trackArtUri
 import com.bismopower.app.player.SleepState
 import com.bismopower.app.ui.common.BI
@@ -141,6 +144,13 @@ sealed interface Sheet {
     /** Confirmar el borrado (solo Android 8 a 10; en los nuevos pregunta Android). */
     data class ConfirmDelete(
         val tracks: List<TrackEntity>,
+    ) : Sheet
+
+    /** Pegar o editar la letra de una canción. */
+    data class Lyrics(
+        val trackId: Long,
+        val title: String,
+        val artist: String,
     ) : Sheet
 
     /** Estilo y color del visualizador. [accent] es el color de la canción (para la paleta "Carátula"). */
@@ -232,6 +242,7 @@ fun SheetHost(controller: SheetController) {
                             is Sheet.ConfirmDelete -> ConfirmDeleteSheet(sheet, controller)
                             is Sheet.MoveToAlbum -> MoveToAlbumSheet(sheet, controller)
                             is Sheet.AddToAlbum -> AddToAlbumSheet(sheet, controller)
+                            is Sheet.Lyrics -> LyricsSheet(sheet, controller)
                             null -> Unit
                         }
                     }
@@ -283,6 +294,7 @@ private fun ColumnScope.TrackMenu(
             controller.close()
         }
     }
+    SheetRow(BI.Lyrics, "Añadir o editar la letra") { controller.open(Sheet.Lyrics(t.id, t.title, t.artist)) }
     SheetRow(BI.Disc, "Mover a otro álbum") { controller.open(Sheet.MoveToAlbum(listOf(t))) }
     val deleter = LocalDeleter.current
     SheetRow(BI.Trash, "Borrar del teléfono", danger = true) {
@@ -290,6 +302,135 @@ private fun ColumnScope.TrackMenu(
         deleter.request(listOf(t))
     }
 }
+
+// ---------------------------------------------------------------- pegar la letra
+
+/**
+ * Pegar o escribir la letra de una canción. Se abre con la letra que ya tenga (la pegada antes,
+ * o la de un .lrc o la incluida en la canción, para corregirla). Si trae tiempos tipo
+ * `[01:23.45]` queda sincronizada; si no, se ve como texto normal.
+ */
+@Composable
+private fun ColumnScope.LyricsSheet(
+    sheet: Sheet.Lyrics,
+    controller: SheetController,
+) {
+    val c = LocalBismo.current
+    val context = LocalContext.current
+    val app = context.container
+    val scope = rememberCoroutineScope()
+    var text by remember(sheet) { mutableStateOf(TextFieldValue("")) }
+    var loaded by remember(sheet) { mutableStateOf(false) }
+    var hasPasted by remember(sheet) { mutableStateOf(false) }
+    LaunchedEffect(sheet) {
+        val pasted = app.lyrics.pasted(sheet.trackId)
+        hasPasted = pasted != null
+        val start = pasted ?: app.lyrics.forTrack(sheet.trackId)?.toText() ?: ""
+        text = TextFieldValue(start, TextRange(start.length))
+        loaded = true
+    }
+    val parsed = remember(text.text) { LrcParser.parse(text.text, LyricsRepository.PASTED) }
+
+    fun paste() {
+        val clip = context.getSystemService(android.content.ClipboardManager::class.java)?.primaryClip
+        val pastedText = clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context)?.toString()
+        if (pastedText.isNullOrBlank()) {
+            context.toast("No hay texto copiado")
+        } else {
+            val clean = pastedText.take(MAX_LYRICS)
+            text = TextFieldValue(clean, TextRange(clean.length))
+        }
+    }
+
+    SheetTitle("Letra de «${sheet.title}»")
+    Text(
+        "Copia la letra (de una página o de otra app) y toca Pegar. Si trae tiempos como [01:23.45], avanza sola con la canción.",
+        style = T.small,
+        color = c.muted,
+        modifier = Modifier.padding(start = 6.dp, end = 6.dp, bottom = 10.dp),
+    )
+    BasicTextField(
+        value = text,
+        onValueChange = { if (it.text.length <= MAX_LYRICS) text = it },
+        enabled = loaded,
+        textStyle = T.body.copy(color = c.text, fontSize = 15.sp, lineHeight = 22.sp),
+        cursorBrush = SolidColor(c.accent),
+        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = 130.dp, max = 260.dp),
+        decorationBox = { inner ->
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 130.dp)
+                    .glass(Corners.button, strong = true, shadow = false)
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+            ) {
+                if (text.text.isEmpty()) {
+                    Text(
+                        if (loaded) "Pega o escribe la letra aquí…" else "Buscando la letra…",
+                        style = T.body.copy(fontSize = 15.sp),
+                        color = c.muted,
+                    )
+                }
+                inner()
+            }
+        },
+    )
+    Text(
+        when {
+            text.text.isBlank() -> " "
+            parsed == null -> "No se encontró texto"
+            parsed.synced -> "Con tiempos: ${plural(parsed.lines.size, "línea", "líneas")} que avanzan con la canción"
+            else -> "Sin tiempos: ${plural(parsed.lines.size, "línea", "líneas")} de texto normal"
+        },
+        style = T.tiny,
+        color = if (parsed?.synced == true) c.accent else c.muted,
+        modifier = Modifier.padding(start = 6.dp, top = 6.dp, bottom = 10.dp),
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(
+            Modifier
+                .weight(1f)
+                .glass(Corners.button, strong = true, shadow = false)
+                .clickable { paste() }
+                .padding(vertical = 13.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(BI.Paste, null, tint = c.accent, modifier = Modifier.size(17.dp))
+            Spacer(Modifier.width(7.dp))
+            Text("Pegar", style = T.label, color = c.text)
+        }
+        PrimaryButton(
+            "Guardar",
+            onClick = {
+                scope.launch {
+                    val ok = app.lyrics.savePasted(sheet.trackId, text.text)
+                    context.toast(if (ok) "Letra guardada" else "No se pudo guardar la letra")
+                    if (ok) controller.close()
+                }
+            },
+            modifier = Modifier.weight(1f),
+            icon = BI.Check,
+            enabled = parsed != null,
+        )
+    }
+    if (hasPasted) {
+        Spacer(Modifier.height(6.dp))
+        SheetRow(BI.Trash, "Quitar la letra pegada", danger = true) {
+            scope.launch {
+                app.lyrics.removePasted(sheet.trackId)
+                context.toast("Letra quitada")
+                controller.close()
+            }
+        }
+    }
+}
+
+private const val MAX_LYRICS = 30_000
 
 // ---------------------------------------------------------------- confirmar borrado (Android 8 a 10)
 

@@ -25,11 +25,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.bismopower.app.ui.theme.BismoColors
 import com.bismopower.app.ui.theme.LocalBismo
 import com.bismopower.app.ui.theme.T
 import java.util.Locale
@@ -209,6 +212,7 @@ fun ListRow(
         modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
+            .then(if (highlight) Modifier.nowPlaying(c) else Modifier)
             .then(if (selected) Modifier.background(c.accentSoft) else Modifier)
             .then(
                 when {
@@ -227,6 +231,55 @@ fun ListRow(
             Text(subtitle, style = T.tiny, color = c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         trailing()
+    }
+}
+
+/**
+ * Marca la fila de la canción que suena: un brillo del color de acento que sale desde la
+ * izquierda y un borde que se apaga hacia la derecha. Quieto (sin animación continua).
+ */
+fun Modifier.nowPlaying(
+    c: BismoColors,
+    shape: Shape = RoundedCornerShape(12.dp),
+): Modifier =
+    this
+        .background(
+            Brush.horizontalGradient(
+                0f to c.accent.copy(alpha = if (c.dark) 0.26f else 0.18f),
+                0.55f to c.accent.copy(alpha = if (c.dark) 0.10f else 0.07f),
+                1f to c.accent.copy(alpha = if (c.dark) 0.05f else 0.03f),
+            ),
+            shape,
+        ).border(
+            1.5.dp,
+            Brush.horizontalGradient(
+                0f to c.accent,
+                0.6f to c.accent.copy(alpha = 0.55f),
+                1f to c.accent.copy(alpha = 0.22f),
+            ),
+            shape,
+        )
+
+/** Carátula pequeña de una fila; si es la canción que suena, encima va el ícono de ondas. */
+@Composable
+fun RowArt(
+    playing: Boolean,
+    corner: Dp,
+    content: @Composable () -> Unit,
+) {
+    Box(contentAlignment = Alignment.Center) {
+        content()
+        if (playing) {
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .clip(RoundedCornerShape(corner))
+                    .background(Color.Black.copy(alpha = 0.45f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(BI.Wave, "Sonando ahora", tint = Color.White, modifier = Modifier.size(20.dp))
+            }
+        }
     }
 }
 

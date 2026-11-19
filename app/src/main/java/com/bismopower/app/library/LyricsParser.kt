@@ -16,6 +16,19 @@ data class Lyrics(
     val source: String,
 )
 
+/** La letra otra vez como texto LRC (o texto normal si no tiene tiempos), para poder editarla. */
+fun Lyrics.toText(): String =
+    lines.joinToString("\n") { line ->
+        if (synced && line.timeMs >= 0) {
+            val m = line.timeMs / 60_000
+            val sec = (line.timeMs % 60_000) / 1_000
+            val cs = (line.timeMs % 1_000) / 10
+            "[%02d:%02d.%02d]%s".format(java.util.Locale.US, m, sec, cs, line.text)
+        } else {
+            line.text
+        }
+    }
+
 /**
  * Lee letras en formato LRC:
  *

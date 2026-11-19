@@ -3,26 +3,32 @@ package com.bismopower.app.ui.player
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -31,6 +37,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
@@ -64,6 +71,9 @@ private sealed interface LyricsState {
  * Con letra sincronizada (LRC), la línea que se está cantando se ilumina y la lista la sigue
  * sola; tocar una línea salta a ese momento. Si arrastras la lista, deja de seguir la canción
  * por 4 segundos para que puedas leer tranquilo.
+ *
+ * [onEdit] abre la hoja para pegar o corregir la letra (botón de lápiz arriba a la derecha, o
+ * "Pegar la letra" cuando la canción no tiene).
  */
 @Composable
 fun LyricsView(
@@ -71,11 +81,14 @@ fun LyricsView(
     positionMs: Long,
     accent: Color,
     onSeek: (Long) -> Unit,
+    onEdit: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val repo = LocalContext.current.container.lyrics
     var retry by remember { mutableIntStateOf(0) }
-    val state by produceState<LyricsState>(LyricsState.Loading, trackId, retry) {
+    // Cuando se pega o se quita una letra, se vuelve a buscar.
+    val changes by repo.changes.collectAsState()
+    val state by produceState<LyricsState>(LyricsState.Loading, trackId, retry, changes) {
         value = LyricsState.Loading
         val found = trackId?.let { repo.forTrack(it) }
         value = if (found != null) LyricsState.Found(found) else LyricsState.Missing
@@ -86,16 +99,33 @@ fun LyricsView(
             LyricsState.Loading ->
                 CircularProgressIndicator(Modifier.size(26.dp), color = Color.White.copy(alpha = 0.7f), strokeWidth = 2.dp)
             LyricsState.Missing ->
-                NoLyrics {
-                    repo.invalidate()
-                    retry++
-                }
-            is LyricsState.Found ->
+                NoLyrics(
+                    accent = accent,
+                    onPaste = onEdit,
+                    onRetry = {
+                        repo.invalidate()
+                        retry++
+                    },
+                )
+            is LyricsState.Found -> {
                 if (s.lyrics.synced) {
                     SyncedLyrics(s.lyrics, positionMs, accent, onSeek)
                 } else {
                     PlainLyrics(s.lyrics)
                 }
+                // Lápiz para corregir o cambiar la letra.
+                Box(
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.28f))
+                        .clickable { onEdit() },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(BI.Edit, "Editar la letra", tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.size(18.dp))
+                }
+            }
         }
     }
 }
@@ -187,20 +217,37 @@ private fun PlainLyrics(lyrics: Lyrics) {
 }
 
 @Composable
-private fun NoLyrics(onRetry: () -> Unit) {
+private fun NoLyrics(
+    accent: Color,
+    onPaste: () -> Unit,
+    onRetry: () -> Unit,
+) {
     Column(Modifier.padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Icon(BI.Lyrics, null, tint = Color.White.copy(alpha = 0.6f), modifier = Modifier.size(34.dp))
         Spacer(Modifier.height(12.dp))
         Text("Esta canción no tiene letra", style = T.h2, color = Color.White)
         Spacer(Modifier.height(6.dp))
         Text(
-            "Pon un archivo .lrc con el mismo nombre de la canción en tu carpeta de letras " +
-                "(Ajustes → Carpeta de letras), o usa canciones que traigan la letra incluida.",
+            "Copia la letra de cualquier página y pégala aquí. También sirve un archivo .lrc en tu " +
+                "carpeta de letras (Ajustes → Carpeta de letras).",
             style = T.small,
             color = Color.White.copy(alpha = 0.6f),
             textAlign = TextAlign.Center,
         )
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(16.dp))
+        Row(
+            Modifier
+                .clip(RoundedCornerShape(14.dp))
+                .background(accent)
+                .clickable { onPaste() }
+                .padding(horizontal = 18.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(BI.Paste, null, tint = Color.White, modifier = Modifier.size(17.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Pegar la letra", style = T.label, color = Color.White)
+        }
+        Spacer(Modifier.height(6.dp))
         Text(
             "Buscar otra vez",
             style = T.label,
